@@ -1,0 +1,10 @@
+{
+  "structure_sha256": "e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1",
+  "grid": [
+    120,
+    60,
+    64
+  ],
+  "pitch_nm": 2.0,
+  "note": "r\u00e9g\u00e9n\u00e9rer avec VF_UPDATE_GOLDEN=1"
+}
