@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+# simulation outputs
+*.png
+*.vtk
+*.stl
+report.json
+demo_deck.yaml
