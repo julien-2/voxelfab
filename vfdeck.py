@@ -146,6 +146,13 @@ class DeckRunner:
         self.setup()
         d = self.deck
         for i, step in enumerate(d.get("steps", []), start=1):
+            # garde : YAML 1.1 convertit les clés non cotées 'on/yes/off/no'
+            # en booléens -> erreur claire plutôt qu'un crash JSON ultérieur
+            for k in step:
+                if isinstance(k, bool):
+                    raise DeckError(
+                        f"étape {i} : clé YAML booléenne (on/yes/off/no…) — "
+                        f"écrire 'on_materials:' ou coter la clé ('on': …)")
             t0 = time.perf_counter()
             try:
                 self._exec(step)
@@ -165,10 +172,14 @@ class DeckRunner:
             self.p.substrate(self._mid(step["material"]),
                              thickness_nm=self._thickness(step, "thickness_nm"))
         elif op == "deposit":
+            on = step.get("on_materials", step.get("on"))
+            if isinstance(on, bool):
+                raise DeckError("clé 'on:' interprétée comme booléen YAML — "
+                                "utiliser 'on_materials:'")
             self.p.deposit(self._mid(step["material"]),
                            thickness_nm=self._thickness(step, "thickness_nm"),
                            mode=step.get("mode", "conformal"),
-                           on_materials=self._mids(step.get("on")))
+                           on_materials=self._mids(on) if on else None)
         elif op == "etch":
             self.p.etch(thickness_nm=self._thickness(step, "depth_nm",
                                                      "thickness_nm"),
@@ -217,7 +228,7 @@ class DeckRunner:
         prov = {
             "deck": str(self.deck_path) if self.deck_path else "<inline>",
             "deck_sha256": (hashlib.sha256(
-                json.dumps(self.deck, sort_keys=True).encode()).hexdigest()),
+                json.dumps(self.deck, default=repr).encode()).hexdigest()),
             "grid": [self.g.nx, self.g.ny, self.g.nz],
             "pitch_nm": self.g.pitch,
             "voxelfab_version": "0.1",
@@ -262,7 +273,7 @@ steps:
      mask: {invert: {rect: [0.34, 0.52, 0.08, 0.92]}}}
   - {op: deposit, material: SiN, thickness_nm: 8}
   - {op: etch, depth_nm: 8, mode: directional, materials: [SiN]}
-  - {op: deposit, material: Si, thickness_nm: 12, mode: directional, on: [Si]}
+  - {op: deposit, material: Si, thickness_nm: 12, mode: directional, on_materials: [Si]}
   - {op: deposit, material: SiO2, thickness_nm: 50}
   - {op: cmp, target_z: 52}
   - {op: etch, depth_nm: 60, until: Si,

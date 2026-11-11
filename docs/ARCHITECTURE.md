@@ -121,7 +121,7 @@ steps:
   - { op: etch,     depth_nm: 4, mode: isotropic, materials: [SiO2],
       mask: { invert: { layer: gate } } }
   - { op: deposit, material: Si, thickness_nm: 12,
-      mode: directional, on: [Si] }                                # epi S/D
+      mode: directional, on_materials: [Si] }                     # epi S/D
   - { op: deposit, material: SiO2, thickness_nm: 50 }
   - { op: cmp,     target_z: 52 }
   - { op: etch,     depth_nm: 60, until: Si, mask: { layer: contact_s } }
@@ -150,7 +150,7 @@ outputs:
 | Op | Mode(s) | Semantics |
 | -- | ------- | --------- |
 | `substrate` | — | Fill bottom of grid with material |
-| `deposit` | `conformal`, `directional` | Constant-thickness shell (dilation) / vertical fill above exposed surfaces; `on:` = selective |
+| `deposit` | `conformal`, `directional` | Constant-thickness shell (dilation) / vertical fill above exposed surfaces; `on_materials:` = selective |
 | `etch` | `isotropic`, `directional` | Uniform removal (erosion) / vertical RIE with `materials`, `until`, `mask` |
 | `fill` | — | Fill open trenches under a plane |
 | `cmp` | — | Planarize to plane, optional `stop_on` barrier |
