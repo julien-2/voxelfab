@@ -19,13 +19,14 @@ steps, layouts in, 3D structures and virtual metrology out.
 
 ## Quickstart
 
-    pip install numpy scipy matplotlib pyyaml numba
+    pip install -r requirements.txt
     python voxelfab.py            # demo: simplified CMOS flow (2D cross-section)
     python voxelfab.py --mos3d    # demo: 3D MOSFET flow + views
     python voxelfab.py --bench 256  # performance micro-benchmark
     python vfdeck.py demo         # write + run the YAML process deck
 
-Optional: `pip install gdstk shapely` (layout import), `pyvista` (VTK),
+Optional extras are listed (commented) in `requirements.txt`:
+`pip install gdstk shapely` (layout import), `pyvista` (VTK),
 `scikit-image numpy-stl` (STL export).
 
 ## Layout (v0.1 — package split planned, see docs/ARCHITECTURE.md)
@@ -39,6 +40,10 @@ Optional: `pip install gdstk shapely` (layout import), `pyvista` (VTK),
 v0.1 deck runner (this) -> v0.2 Taichi GPU backend (voxel-exact vs CPU) ->
 v0.3 viewer + metrology DSL -> v0.4 DOE sweeps -> v1.0 GUI client.
 
+## License
+
+[MIT](LICENSE) — © 2026 Julien Del.
+
 ## Status
 
-Experimental. License TBD.
+Experimental.
