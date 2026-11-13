@@ -22,6 +22,14 @@ steps, layouts in, 3D structures and virtual metrology out.
 - **3D demo**: planar MOSFET flow (STI → gate stack → spacers → epitaxy →
   contacts), cross-sections, VTK/STL export.
 
+## Documentation
+
+- **[User guide (FR)](docs/USER_GUIDE.md)** — getting started, full deck DSL
+  reference, output formats, determinism, and a tutorial: *adding your own
+  process operations*.
+- [Architecture & roadmap](docs/ARCHITECTURE.md) — product principles,
+  kernel design, GPU path (v0.2), data formats, quality gates.
+
 ## Install
 
     uv pip install .                 # core (numpy, scipy, matplotlib, pyyaml, h5py)
@@ -37,7 +45,7 @@ steps, layouts in, 3D structures and virtual metrology out.
     vf info decks/demo_deck.yaml     # validate + summarize a deck
     vf bench 256                     # micro-benchmark (16.7M voxels)
 
-Outputs land in the output directory: `structure.h5` (the 3D structure + 
+Outputs land in the output directory: `structure.h5` (the 3D structure +
 provenance), `mos3d.png` (top view + cross-sections), `report.json`
 (metrology + provenance + `structure_sha256`).
 
@@ -58,14 +66,11 @@ provenance), `mos3d.png` (top view + cross-sections), `report.json`
     tests/test_golden.py   golden structure test (byte-exact determinism)
     tests/test_h5.py       HDF5 round-trip + provenance tests
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full product
-architecture, the deck DSL reference, and the roadmap.
-
 ## Roadmap
 
-v0.1 package split + deck DSL + HDF5 (this) → v0.2 Taichi GPU backend
-(voxel-exact vs CPU) → v0.3 viewer + metrology DSL → v0.4 DOE sweeps →
-v1.0 GUI client.
+v0.1 package split + deck DSL + HDF5 + user guide (this) → v0.2 Taichi GPU
+backend (voxel-exact vs CPU) → v0.3 viewer + metrology DSL → v0.4 DOE
+sweeps → v1.0 GUI client.
 
 ## License
 
