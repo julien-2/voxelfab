@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "voxelfab"
+version = "0.1.0"
+description = "Virtual fabrication engine: GDS/OAS layouts + YAML process decks -> voxel 3D structures & virtual metrology"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Julien Del" }]
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+gpu = ["taichi"]
+layout = ["gdstk", "shapely"]
+view = ["pyvista"]
+bench = ["numba"]
+dev = ["pytest"]
+
+[project.scripts]
+vf = "voxelfab.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voxelfab"]

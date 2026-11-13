@@ -22,13 +22,13 @@ jobs:
           python-version: "3.13"   # doit correspondre à l'environnement du golden
           enable-cache: true
 
-      - name: Install dependencies
+      - name: Install package
         run: |
           uv venv
-          uv pip install -r requirements.txt pytest
+          uv pip install -e ".[dev]"
 
       - name: Golden structure test (determinism anchor)
         run: uv run pytest tests/test_golden.py -v
 
       - name: Smoke test (engine bench, 2 M voxels)
-        run: uv run python voxelfab.py --bench 128
+        run: uv run vf bench 128

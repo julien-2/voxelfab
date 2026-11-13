@@ -9,36 +9,57 @@ steps, layouts in, 3D structures and virtual metrology out.
 - **Voxel process kernel** (NumPy/SciPy, Numba-accelerated): conformal and
   directional deposition, isotropic and directional etch, lithography, CMP,
   trench fill — all vectorized, calibrated for 1–100M-voxel grids.
-- **Process decks** (`vfdeck.py`): the flow is a versioned YAML file
-  (`steps:`, `materials:`, `outputs:`), with provenance + structure
-  hashing for deterministic runs.
+- **Process decks** (YAML): the flow is a versioned file (`steps:`,
+  `materials:`, `outputs:`), with provenance + structure hashing for
+  deterministic runs.
 - **Layout import**: GDSII/OASIS masks (gdstk + shapely), with mask bias and
   voxel-center sampling.
-- **3D demos**: planar MOSFET flow (STI -> gate stack -> spacers -> epitaxy ->
-  contacts), cross-sections, VTK/STL export, virtual metrology reports.
+- **Virtual metrology**: thickness, CD, top material, volume fractions —
+  written to `report.json` with a full provenance block.
+- **3D demo**: planar MOSFET flow (STI → gate stack → spacers → epitaxy →
+  contacts), cross-sections, VTK/STL export.
+
+## Install
+
+    uv pip install .                 # core (numpy, scipy, matplotlib, pyyaml)
+    uv pip install ".[layout]"       # + GDS/OASIS import (gdstk, shapely)
+    uv pip install ".[view]"         # + VTK export (pyvista)
+    uv pip install ".[bench]"        # + Numba acceleration (recommended)
+    uv pip install -e ".[dev]"       # development (pytest)
 
 ## Quickstart
 
-    pip install -r requirements.txt
-    python voxelfab.py            # demo: simplified CMOS flow (2D cross-section)
-    python voxelfab.py --mos3d    # demo: 3D MOSFET flow + views
-    python voxelfab.py --bench 256  # performance micro-benchmark
-    python vfdeck.py demo         # write + run the YAML process deck
+    vf demo                          # write + run the demo MOSFET deck
+    vf run decks/demo_deck.yaml -o out/   # run any deck
+    vf info decks/demo_deck.yaml     # validate + summarize a deck
+    vf bench 256                     # micro-benchmark (16.7M voxels)
 
-Optional extras are listed (commented) in `requirements.txt`:
-`pip install gdstk shapely` (layout import), `pyvista` (VTK),
-`scikit-image numpy-stl` (STL export).
+Outputs land in the output directory: `mos3d.png` (top view + cross-sections),
+`report.json` (metrology + provenance + `structure_sha256`).
 
-## Layout (v0.1 — package split planned, see docs/ARCHITECTURE.md)
+## Package layout
 
-    voxelfab.py   voxel process kernel (grid, steps, GDS/OAS import, exports)
-    vfdeck.py     YAML process-deck runner (deck DSL v1, CLI, reports)
-    docs/ARCHITECTURE.md   product architecture & roadmap
+    src/voxelfab/
+    ├── grid.py        VoxelGrid, materials registry, height map
+    ├── masks.py       geometric lithography masks
+    ├── ops/           step registry + REFERENCE SEMANTICS (base.py), cpu.py
+    ├── deck.py        YAML deck loading, demo deck
+    ├── run.py         orchestrator: flow execution, outputs, provenance
+    ├── metro.py       virtual metrology
+    ├── export.py      cross-sections, 3D views, VTK, STL
+    ├── layout.py      GDS/OASIS import (extra [layout])
+    └── cli.py         vf run | info | demo | bench
+
+    decks/demo_deck.yaml   shipped example deck (planar MOSFET)
+    tests/test_golden.py   golden structure test (byte-exact determinism)
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full product
+architecture, the deck DSL reference, and the roadmap.
 
 ## Roadmap
 
-v0.1 deck runner (this) -> v0.2 Taichi GPU backend (voxel-exact vs CPU) ->
-v0.3 viewer + metrology DSL -> v0.4 DOE sweeps -> v1.0 GUI client.
+v0.1 package split + deck DSL (this) → v0.2 Taichi GPU backend (voxel-exact
+vs CPU) → v0.3 viewer + metrology DSL → v0.4 DOE sweeps → v1.0 GUI client.
 
 ## License
 

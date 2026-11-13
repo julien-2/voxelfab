@@ -22,9 +22,9 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 
-from vfdeck import DEMO_DECK, DeckRunner  # noqa: E402
+from voxelfab import DEMO_DECK, DeckRunner  # noqa: E402
 
 GOLDEN = ROOT / "tests" / "golden" / "golden.json"
 
