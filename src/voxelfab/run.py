@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__
+from ._version import __version__
 from .deck import DeckError
 from .grid import VoxelGrid
 from .layout import grid_size_for, layout_info, masks_from_layout

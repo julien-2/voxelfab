@@ -11,14 +11,13 @@ API publique :
     export                    -> coupes, vues 3D, VTK, STL
 """
 
+from ._version import __version__
 from .deck import DEMO_DECK, DeckError, load_deck
 from .grid import Materials, VoxelGrid
 from .metro import Metrology
 from .masks import invert, mask_bands, mask_line, mask_rectangle
 from .ops import available_backends, get_step  # enregistre le backend cpu
 from .run import DeckRunner, run_deck
-
-__version__ = "0.1.0"
 
 __all__ = [
     "VoxelGrid", "Materials",
