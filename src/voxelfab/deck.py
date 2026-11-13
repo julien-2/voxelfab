@@ -57,6 +57,7 @@ steps:
   - {op: deposit, material: W, thickness_nm: 60, mode: directional}
   - {op: cmp, target_z: 52}
 outputs:
+  - {type: h5, file: structure.h5}
   - {type: views, file: mos3d.png}
   - {type: report, file: report.json}
 """

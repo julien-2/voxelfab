@@ -1,15 +1,100 @@
-"""Exports et rendus : coupes 2D, vues 3D, VTK, STL.
+"""Exports et rendus : HDF5 (structure), coupes 2D, vues 3D, VTK, STL.
 
-matplotlib est importé paresseusement (le coeur du moteur n'en dépend pas) ;
-pyvista et scikit-image/numpy-stl restent optionnels (extras [view] / stl).
+Le HDF5 est le format de structure canonique (l'API fichier du produit) :
+grille uint8 chunkée + gzip, table des matériaux, attributs de provenance.
+h5py est importé paresseusement ; matplotlib, pyvista et
+scikit-image/numpy-stl restent optionnels (extras [view] / stl).
 """
 
 from __future__ import annotations
+
+import hashlib
 
 import numpy as np
 
 from .grid import Materials, VoxelGrid
 
+
+# --------------------------------------------------------------------------
+# Structure HDF5 (format canonique)
+# --------------------------------------------------------------------------
+
+#: clés de provenance écrites dans le fichier (sous-ensemble déterministe :
+#: pas de timings ni dechemin local -> deux runs identiques donnent un
+#: fichier identique)
+_H5_PROV_KEYS = ("deck", "deck_sha256", "grid", "pitch_nm",
+                 "voxelfab_version", "backend")
+
+
+def export_h5(grid: VoxelGrid, filename: str = "structure.h5",
+              provenance: dict | None = None):
+    """Exporte la structure au format HDF5.
+
+    Contenu :
+      /grid       uint8 (nx, ny, nz), chunké (128³ max) + gzip + shuffle
+      /materials  table (id, name, color) des matériaux, air exclu
+      attrs       pitch_nm, structure_sha256 (hash des octets de la grille)
+                  + provenance déterministe (deck_sha256, version, backend…)
+
+    La grille compressée est le stockage ; le hash de structure reste défini
+    sur les octets bruts de la grille (numpy), pas sur le fichier.
+    """
+    try:
+        import h5py
+    except ImportError:
+        print("  [export] h5py absent : export HDF5 ignoré "
+              "(uv pip install h5py)")
+        return
+    str_dt = h5py.string_dtype("utf-8")
+    mat_dt = np.dtype([("id", "u1"), ("name", str_dt), ("color", str_dt)])
+    mats = np.array(
+        [(mid, grid.materials.name(mid), grid.materials.color(mid))
+         for mid in grid.materials.ids if mid != Materials.AIR],
+        dtype=mat_dt)
+    chunks = (min(grid.nx, 128), min(grid.ny, 128), min(grid.nz, 128))
+    with h5py.File(filename, "w") as f:
+        f.create_dataset("grid", data=grid.data, chunks=chunks,
+                         compression="gzip", compression_opts=4,
+                         shuffle=True)
+        f.create_dataset("materials", data=mats)
+        f.attrs["pitch_nm"] = grid.pitch
+        f.attrs["structure_sha256"] = hashlib.sha256(
+            grid.data.tobytes()).hexdigest()
+        for k in _H5_PROV_KEYS:
+            if provenance and k in provenance:
+                f.attrs[f"prov_{k}"] = provenance[k]
+    print(f"  [export] {filename} "
+          f"({grid.nx * grid.ny * grid.nz} voxels, {len(mats)} matériaux)")
+
+
+def load_h5(filename: str) -> VoxelGrid:
+    """Recharge une structure HDF5 en VoxelGrid (viewer v0.3, round-trip).
+
+    Les matériaux sont réenregistrés dans l'ordre croissant des ids —
+    c'est ainsi qu'export_h5 les écrit, les ids sont donc stables.
+    """
+    import h5py
+    with h5py.File(filename, "r") as f:
+        nx, ny, nz = f["grid"].shape
+        g = VoxelGrid(nx, ny, nz, pitch=float(f.attrs["pitch_nm"]))
+        for row in f["materials"][()]:
+            name = row["name"].decode("utf-8") \
+                if isinstance(row["name"], bytes) else str(row["name"])
+            color = row["color"].decode("utf-8") \
+                if isinstance(row["color"], bytes) else str(row["color"])
+            mid = g.add_material(name, color)
+            if mid != int(row["id"]):
+                raise ValueError(f"{filename} : ids de matériaux non "
+                                 f"consécutifs (attendu {mid}, trouvé "
+                                 f"{int(row['id'])}) — fichier non écrit "
+                                 f"par export_h5 ?")
+        g.data = np.asarray(f["grid"][()], dtype=np.uint8)
+    return g
+
+
+# --------------------------------------------------------------------------
+# Rendus matplotlib + exports optionnels
+# --------------------------------------------------------------------------
 
 def _mpl():
     try:

@@ -203,8 +203,22 @@ class DeckRunner:
 
     # --- sorties -----------------------------------------------------------
 
+    def provenance(self) -> dict:
+        """Bloc de provenance : tout ce qu'il faut pour rejouer un run."""
+        return {
+            "deck": str(self.deck_path) if self.deck_path else "<inline>",
+            "deck_sha256": (hashlib.sha256(
+                json.dumps(self.deck, default=repr).encode()).hexdigest()),
+            "grid": [self.g.nx, self.g.ny, self.g.nz],
+            "pitch_nm": self.g.pitch,
+            "voxelfab_version": __version__,
+            "backend": self.backend,
+            "steps": [{"n": n, "op": op, "s": round(dt, 3)}
+                      for n, op, dt in self.timings],
+        }
+
     def outputs(self):
-        from .export import export_stl, export_vtk, render_views
+        from .export import export_h5, export_stl, export_vtk, render_views
         self.outdir.mkdir(parents=True, exist_ok=True)
         for out in self.deck.get("outputs", []):
             kind, file = out.get("type"), out.get("file", "out")
@@ -212,6 +226,11 @@ class DeckRunner:
             if kind == "views":
                 render_views(self.g, filename=path,
                              title=f"voxelfab — {self.deck_path or 'deck'}")
+            elif kind == "h5":
+                # sous-ensemble déterministe : pas de timings dans le fichier
+                export_h5(self.g, filename=path,
+                          provenance={k: v for k, v in self.provenance().items()
+                                      if k != "steps"})
             elif kind == "vtk":
                 export_vtk(self.g, filename=path)
             elif kind == "stl":
@@ -225,17 +244,7 @@ class DeckRunner:
     def report_deck(self):
         """Rapport JSON : métrologie virtuelle + provenance."""
         met = Metrology(self.g)
-        prov = {
-            "deck": str(self.deck_path) if self.deck_path else "<inline>",
-            "deck_sha256": (hashlib.sha256(
-                json.dumps(self.deck, default=repr).encode()).hexdigest()),
-            "grid": [self.g.nx, self.g.ny, self.g.nz],
-            "pitch_nm": self.g.pitch,
-            "voxelfab_version": __version__,
-            "backend": self.backend,
-            "steps": [{"n": n, "op": op, "s": round(dt, 3)}
-                      for n, op, dt in self.timings],
-        }
+        prov = self.provenance()
         rep = {"provenance": prov,
                "volume_fractions": met.report()["volume_fractions"],
                "structure_sha256": hashlib.sha256(

@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  golden:
-    name: Golden structure test
+  tests:
+    name: Golden + HDF5 tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -27,8 +27,8 @@ jobs:
           uv venv
           uv pip install -e ".[dev]"
 
-      - name: Golden structure test (determinism anchor)
-        run: uv run pytest tests/test_golden.py -v
+      - name: Tests (golden + HDF5 round-trip)
+        run: uv run pytest tests/ -v
 
       - name: Smoke test (engine bench, 2 M voxels)
         run: uv run vf bench 128

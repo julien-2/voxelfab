@@ -15,6 +15,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "pyyaml",
+    "h5py",
 ]
 
 [project.optional-dependencies]

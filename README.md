@@ -12,6 +12,9 @@ steps, layouts in, 3D structures and virtual metrology out.
 - **Process decks** (YAML): the flow is a versioned file (`steps:`,
   `materials:`, `outputs:`), with provenance + structure hashing for
   deterministic runs.
+- **HDF5 structures**: the canonical output format — chunked + gzip uint8
+  grid, materials table, provenance attributes (`deck_sha256`, engine
+  version, backend, `structure_sha256`). Reloadable with `load_h5()`.
 - **Layout import**: GDSII/OASIS masks (gdstk + shapely), with mask bias and
   voxel-center sampling.
 - **Virtual metrology**: thickness, CD, top material, volume fractions —
@@ -21,7 +24,7 @@ steps, layouts in, 3D structures and virtual metrology out.
 
 ## Install
 
-    uv pip install .                 # core (numpy, scipy, matplotlib, pyyaml)
+    uv pip install .                 # core (numpy, scipy, matplotlib, pyyaml, h5py)
     uv pip install ".[layout]"       # + GDS/OASIS import (gdstk, shapely)
     uv pip install ".[view]"         # + VTK export (pyvista)
     uv pip install ".[bench]"        # + Numba acceleration (recommended)
@@ -34,8 +37,9 @@ steps, layouts in, 3D structures and virtual metrology out.
     vf info decks/demo_deck.yaml     # validate + summarize a deck
     vf bench 256                     # micro-benchmark (16.7M voxels)
 
-Outputs land in the output directory: `mos3d.png` (top view + cross-sections),
-`report.json` (metrology + provenance + `structure_sha256`).
+Outputs land in the output directory: `structure.h5` (the 3D structure + 
+provenance), `mos3d.png` (top view + cross-sections), `report.json`
+(metrology + provenance + `structure_sha256`).
 
 ## Package layout
 
@@ -46,20 +50,22 @@ Outputs land in the output directory: `mos3d.png` (top view + cross-sections),
     ├── deck.py        YAML deck loading, demo deck
     ├── run.py         orchestrator: flow execution, outputs, provenance
     ├── metro.py       virtual metrology
-    ├── export.py      cross-sections, 3D views, VTK, STL
+    ├── export.py      HDF5 structure (export_h5/load_h5), views, VTK, STL
     ├── layout.py      GDS/OASIS import (extra [layout])
     └── cli.py         vf run | info | demo | bench
 
     decks/demo_deck.yaml   shipped example deck (planar MOSFET)
     tests/test_golden.py   golden structure test (byte-exact determinism)
+    tests/test_h5.py       HDF5 round-trip + provenance tests
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full product
 architecture, the deck DSL reference, and the roadmap.
 
 ## Roadmap
 
-v0.1 package split + deck DSL (this) → v0.2 Taichi GPU backend (voxel-exact
-vs CPU) → v0.3 viewer + metrology DSL → v0.4 DOE sweeps → v1.0 GUI client.
+v0.1 package split + deck DSL + HDF5 (this) → v0.2 Taichi GPU backend
+(voxel-exact vs CPU) → v0.3 viewer + metrology DSL → v0.4 DOE sweeps →
+v1.0 GUI client.
 
 ## License
 
