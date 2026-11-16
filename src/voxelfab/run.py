@@ -200,6 +200,20 @@ class DeckRunner:
             self._log(f"etch_selective {mode} {t} vx "
                       f"({', '.join(f'{k}×{v:g}' for k, v in rates.items())})")
 
+        elif op == "grow":
+            t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
+            frm = self._mid(step["from"])
+            mat = self._mid(step["material"])
+            exp = float(step.get("expansion", 1.0))
+            if exp <= 0:
+                raise DeckError(f"'expansion' doit être > 0 : {exp!r}")
+            into = self._mids(step.get("into")) or None
+            get_step(self.backend, "grow")(
+                g, t, frm, mat, expansion=exp, into=into,
+                mask=self._mask(step.get("mask"), where))
+            self._log(f"grow {step['material']} <- {step['from']} "
+                      f"({t} vx consommés, expansion {exp:g})")
+
         elif op == "litho":
             t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
             materials = self._mids(step.get("materials")) or None

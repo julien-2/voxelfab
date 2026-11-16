@@ -224,6 +224,59 @@ dépôt. C'est ainsi qu'on modélise une épitaxie sélective.
 > — les coins sont légèrement plus « pointus ». C'est un compromis
 > performance assumé et documenté.
 
+#### `grow` — croissance par conversion (oxydation, siliciuration)
+
+```yaml
+# Oxydation thermique : 10 nm de SiO2 consomment 4,4 nm de Si
+- {op: grow, material: SiO2, from: Si, depth_nm: 4.4, expansion: 2.27}
+
+# Siliciuration : le Ni déposé juste avant réagit avec le Si
+- {op: deposit, material: Ni, thickness_nm: 10}
+- {op: grow, material: NiSi, from: Si, depth_nm: 18.3, expansion: 1.39,
+   into: [Ni]}
+- {op: etch, depth_nm: 5, materials: [Ni]}   # dip de nettoyage du Ni excédentaire
+```
+
+Contrairement à `deposit` (ajout de matière) ou `etch` (retrait), `grow`
+**convertit** un matériau en un autre à leur interface : c'est l'émulation
+de l'oxydation thermique, de la nitruration ou de la siliciuration.
+
+| Paramètre | Rôle |
+| --- | --- |
+| `from` | matériau consommé par la réaction (obligatoire) |
+| `material` | produit de la réaction (obligatoire) |
+| `depth_nm` | épaisseur **consommée** de `from` — la grandeur d'entrée de la réaction |
+| `expansion` | épaisseur de produit produite par unité consommée (défaut 1.0) |
+| `into` | matériaux que le produit peut aussi remplacer côté réactif |
+| `mask` | limite la réaction aux colonnes ouvertes |
+
+Sémantique :
+
+- le produit occupe la zone consommée **plus** une croissance de
+  `(expansion − 1) × depth_nm` du côté réactif (air et matériaux `into`).
+  Pour Si → SiO2, `expansion: 2.27` reproduit le rapport de volumes
+  Deal-Grove : **~44 % de l'oxyde sous la surface d'origine, ~56 %
+  au-dessus** — un oxyde de 10 nm consomme 4,4 nm de Si ;
+- **l'orientation cristalline n'intervient pas sur la géométrie** : le
+  ratio 44/56 est un rapport de volumes, indépendant de l'orientation ;
+  seule la cinétique en dépend (le plan (111) s'oxyde ~1,7× plus vite que
+  (100)), et en émulation cela se règle par le `depth_nm` de chaque étape ;
+- la réaction n'attaque que les interfaces `from` / côté réactif : les
+  matériaux inertes (oxyde, nitrure) **masquent** le matériau consommé,
+  comme un vrai masque d'oxydation ;
+- si `from` est plus mince que `depth_nm` (poly épuisé, îlot mince), il
+  est consommé en entier et la croissance est **réduite au prorata** ;
+- la croissance suit toutes les surfaces exposées (fond de tranchée,
+  parois latérales) avec un budget proportionnel par colonne ;
+- siliciuration : `into: [Ni]` convertit le métal dans la limite du
+  budget ; l'excédent de métal reste en place et s'enlève par gravure,
+  exactement comme le dip de nettoyage qui suit une vraie siliciuration.
+
+Limites assumées (émulation, pas simulation) : pas de « bird's beak »
+LOCOS (le front ne se propage pas sous le nitrure à travers l'oxyde
+existant) et pas de poussée mécanique (l'oxyde bloqué par un spacer ne
+soulève rien).
+
 #### `etch` — gravure
 
 ```yaml

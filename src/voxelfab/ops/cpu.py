@@ -9,7 +9,9 @@ Choix de performance :
   1. deposit conformal / etch isotropic = dilation / érosion booléennes
      (pas de distance_transform_edt -> pas de temporaire float64).
      rayon <= 4 : boule euclidienne exacte ; au-delà : itérations de la
-     croix 6-voisine (boule L1), O(N) par itération.
+     croix 6-voisine (boule L1), O(N) par itération ; grow réutilise la
+     dilation pour la consommation, puis un front de croissance à budget
+     par colonne (croix 6-voisine).
   2. cmp / deposit directional : tout est broadcast sur le champ de
      hauteur, aucune boucle Python par colonne.
   3. Hygiène mémoire : uint8/bool partout (1 octet/voxel), sélections de
@@ -313,6 +315,69 @@ def etch_selective_isotropic(grid, depth, rates, until_material=None,
     if mask is not None:
         remove &= mask[:, :, None]
     grid.data[remove] = Materials.AIR
+
+
+def _dilate6(m: np.ndarray) -> np.ndarray:
+    """Dilation 6-voisine (croix), par slices — pas de temporaire scipy."""
+    out = np.zeros_like(m)
+    out[:, :-1, :] |= m[:, 1:, :]
+    out[:, 1:, :] |= m[:, :-1, :]
+    out[:-1, :, :] |= m[1:, :, :]
+    out[1:, :, :] |= m[:-1, :, :]
+    out[:, :, :-1] |= m[:, :, 1:]
+    out[:, :, 1:] |= m[:, :, :-1]
+    return out
+
+
+@register("cpu", "grow")
+def grow(grid, depth, from_id, product_id, expansion=1.0, into=None,
+         mask=None):
+    """Croissance par conversion (oxydation, siliciuration) — cf. contrat
+    ops/base.py. Tout vectorisé : consommation par dilation, puis front de
+    croissance par itérations de la croix, budget proportionnel par
+    colonne (le cumul par colonne alloue un int32 temporaire, comme fill)."""
+    if depth <= 0 or expansion <= 0:
+        return
+    data = grid.data
+    react = data == Materials.AIR
+    if into:
+        react |= grid.select(tuple(into))
+    if mask is not None:
+        react &= mask[:, :, None]
+    # consommation : voxels de `from` à distance <= depth du côté réactif
+    # (minceur épuisée : tout est consommé, le budget suivra au prorata)
+    consume = _dilate(react, depth) & (data == from_id)
+    if mask is not None:
+        consume &= mask[:, :, None]
+    if not consume.any():
+        return
+    data[consume] = product_id
+    d2 = int(round(depth * (float(expansion) - 1.0)))
+    if d2 <= 0:
+        return
+    # budget de croissance proportionnel par colonne, propagé au voisinage
+    # (maximum filter) pour oxyder aussi les parois latérales
+    n = consume.sum(axis=2, dtype=np.int64)
+    b = np.rint(n * (float(expansion) - 1.0)).astype(np.int64)
+    b = ndimage.maximum_filter(b, size=2 * d2 + 1)
+    grown = np.zeros(data.shape, dtype=bool)
+    cnt = np.zeros((grid.nx, grid.ny), dtype=np.int64)
+    front = consume
+    for _ in range(d2):
+        nxt = _dilate6(front) & react & ~consume & ~grown
+        if not nxt.any():
+            break
+        ranks = np.cumsum(nxt, axis=2, dtype=np.int32)
+        keep = nxt & (ranks + cnt[:, :, None] <= b[:, :, None])
+        if not keep.any():
+            break
+        grown |= keep
+        cnt += keep.sum(axis=2, dtype=np.int64)
+        front = grown | consume
+        if bool((cnt >= b).all()):
+            break
+    if grown.any():
+        data[grown] = product_id
 
 
 @register("cpu", "fill")

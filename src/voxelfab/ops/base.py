@@ -50,6 +50,35 @@ nm -> voxels est faite par l'orchestrateur) :
                       les interfaces inter-matériaux comptent comme des
                       surfaces d'attaque. until_material est ignoré.
 
+    grow(grid, depth_voxels, from_id, product_id, expansion=1.0,
+         into=None, mask=None)
+        Croissance par conversion (oxydation thermique, siliciuration) :
+        le matériau `from_id` réagit au contact du côté réactif (air +
+        matériaux `into`) et se convertit en `product_id`.
+        depth_voxels : épaisseur CONSOMMÉE de `from_id` (grandeur d'entrée
+        de la réaction). expansion : épaisseur de produit produite par
+        voxel consommé (Si -> SiO2 : 2.27, soit ~44 % de l'oxyde sous la
+        surface d'origine et ~56 % au-dessus ; rapport de volumes,
+        indépendant de l'orientation cristalline — seule la cinétique en
+        dépend, et elle se règle par depth_nm à chaque étape du deck).
+        - consommation : voxels de `from_id` à distance <= depth_voxels
+          du côté réactif (même convention que etch isotropic : les
+          matériaux inertes bloquent la réaction) ; si le matériau est
+          plus mince que depth_voxels, il est consommé en entier.
+        - croissance : budget proportionnel par colonne,
+          b(x, y) = round(nb voxels consommés (x, y) × (expansion − 1)),
+          propagé au voisinage (maximum filter) pour atteindre aussi les
+          parois latérales ; le front avance par itérations de la croix
+          6-voisine depuis la zone consommée, dans le côté réactif
+          uniquement (il ne pousse ni dans `from_id`, ni dans les
+          matériaux inertes), chaque colonne étant limitée à son budget
+          (ordre déterministe : pas croissant, puis z croissant).
+        - into : matériaux que le produit peut remplacer côté réactif
+          (ex. le Ni d'une siliciuration) ; l'excédent de métal au-delà
+          du budget reste en place — on l'enlève par gravure, comme un
+          vrai dip de nettoyage post-siliciuration.
+        - mask : limite la réaction aux colonnes ouvertes.
+
     fill(grid, material, max_z)
         Remplit les volumes d'air connectés à la surface et situés sous
         z <= max_z (surface du wafer avant gravure).
