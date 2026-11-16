@@ -277,6 +277,62 @@ LOCOS (le front ne se propage pas sous le nitrure à travers l'oxyde
 existant) et pas de poussée mécanique (l'oxyde bloqué par un spacer ne
 soulève rien).
 
+#### `epitaxy` — épitaxie sélective et facettée
+
+```yaml
+# SEG simple : croissance conformale depuis le Si exposé uniquement
+- {op: epitaxy, mode: seed, material: Si, depth_nm: 40, seed: Si}
+
+# Épitaxie facettée : facettes {111} à 54,7° sur wafer (100)
+- {op: epitaxy, mode: crystal, material: SiGe, depth_nm: 60,
+   seed: Si, orientation: '100',
+   facet_rates: {'100': 1.0, '110': 0.6, '111': 0.25}}
+```
+
+Contrairement à `deposit` (dépose sur **toutes** les surfaces), `epitaxy`
+ne fait croître que depuis une **graine monocristalline** (`seed`) : c'est
+l'épitaxie sélective (SEG). L'oxyde et le nitrure bloquent la croissance,
+comme dans un vrai procédé.
+
+| Paramètre | Rôle |
+| --- | --- |
+| `material` | matériau déposé (obligatoire) |
+| `seed` | matériau graine monocristallin — la croissance ne part que de lui (obligatoire) |
+| `depth_nm` | épaisseur crue (cf. sémantique par mode) |
+| `mode` | `seed` (défaut) ou `crystal` |
+| `orientation` | plan de wafer : `'100'`, `'110'` ou `'111'` (mode crystal) |
+| `facet_rates` | taux relatifs par famille `{hkl}` (mode crystal) |
+| `mask` | limite les colonnes de croissance |
+
+**Mode `seed` — SEG conforme.** Croissance sur toutes les faces exposées
+de la graine (fond de fenêtre, parois), en suivant la géodésie à travers
+l'air : un dépôt de 40 nm dans une fenêtre d'oxyde remplit la fenêtre mais
+ne dépose **rien** au-dessus de l'oxyde, même en face — la matière ne peut
+pas « sauter » le masque. C'est la différence avec `deposit conformal`.
+
+**Mode `crystal` — épitaxie facettée.** La construction SEG classique :
+la croissance verticale est limitée par des **plans cristallographiques
+lents** partant des bords de la graine exposée. Sur wafer (100), les
+facettes {111} montent à **54,7°** du plan de wafer (45° en coupe axiale,
+54,7° en coupe diagonale) ; dans une fenêtre étroite, les facettes des
+bords opposés se rejoignent et forment le **toit en diamant** typique du
+SiGe épitaxié en source/drain. Les taux (`facet_rates`, normalisés au
+maximum) décident de la hauteur des facettes : `{111}` lent → facettes
+dominantes près des bords ; tous égaux → croissance verticale plate.
+
+- `depth_nm` = épaisseur verticale crue de la famille la plus parallèle
+  au wafer (sur (100) avec `{'100': 1.0}` : `depth_nm` exactement) ;
+- défaut : `{'100': 1.0, '110': 0.6, '111': 0.25}` (Si CVD typique) ;
+- l'orientation `'110'`/`'111'` tourne le repère cristallin : les angles
+  de facettes et la famille dominante suivent la cristallographie
+  (sur (110), la famille la plus parallèle au wafer est {111}) ;
+- la croissance ne démarre que sur la graine exposée à l'air : pas de
+  débordement au-dessus du masque, pas de croissance sur l'oxyde.
+
+Limites assumées : croissance verticale (carte de hauteur) — pas de
+surplomb ni de recouvrement latéral au-dessus du masque (FLO) ; facettes
+quasi verticales ignorées ; familles limitées à {100}/{110}/{111}.
+
 #### `etch` — gravure
 
 ```yaml

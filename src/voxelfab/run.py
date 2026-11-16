@@ -214,6 +214,45 @@ class DeckRunner:
             self._log(f"grow {step['material']} <- {step['from']} "
                       f"({t} vx consommés, expansion {exp:g})")
 
+        elif op == "epitaxy":
+            t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
+            mat = self._mid(step["material"])
+            seed = self._mid(step["seed"])
+            mode = step.get("mode", "seed")
+            mask = self._mask(step.get("mask"), where)
+            if mode == "seed":
+                get_step(self.backend, "epitaxy", "seed")(
+                    g, t, mat, seed, mask=mask)
+                self._log(f"epitaxy seed {step['material']} {t} vx "
+                          f"(graine {step['seed']})")
+            elif mode == "crystal":
+                ori = str(step.get("orientation", "100"))
+                if ori not in ("100", "110", "111"):
+                    raise DeckError(f"orientation inconnue : {ori!r} "
+                                    "(100, 110 ou 111)")
+                rates = step.get("facet_rates",
+                                 {"100": 1.0, "110": 0.6, "111": 0.25})
+                if not isinstance(rates, dict) or not rates:
+                    raise DeckError("'facet_rates' doit être un dict "
+                                    "non vide {famille: taux}")
+                clean = {}
+                for k, v in rates.items():
+                    ks = str(k)
+                    if ks not in ("100", "110", "111"):
+                        raise DeckError(f"famille de facettes inconnue : "
+                                        f"{k!r} (100, 110 ou 111)")
+                    if isinstance(v, bool) or \
+                            not isinstance(v, (int, float)) or v <= 0:
+                        raise DeckError(f"taux invalide pour {ks} : {v!r}")
+                    clean[ks] = float(v)
+                get_step(self.backend, "epitaxy", "crystal")(
+                    g, t, mat, orientation=ori, facet_rates=clean,
+                    seed=seed, mask=mask)
+                self._log(f"epitaxy crystal {step['material']} {t} vx "
+                          f"({ori}, {clean})")
+            else:
+                raise DeckError(f"mode epitaxy inconnu : {mode!r}")
+
         elif op == "litho":
             t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
             materials = self._mids(step.get("materials")) or None

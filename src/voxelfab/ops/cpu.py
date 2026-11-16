@@ -380,6 +380,155 @@ def grow(grid, depth, from_id, product_id, expansion=1.0, into=None,
         data[grown] = product_id
 
 
+# --------------------------------------------------------------------------
+# Épitaxie : SEG conforme + croissance facettée (carte de hauteur)
+# --------------------------------------------------------------------------
+
+# axes grille (x, y, z) exprimés dans la base cristalline (entiers, à
+# normaliser) — orthogonaux deux à deux par construction
+_ORIENTATIONS = {
+    "100": ((0, 1, 0), (0, 0, 1), (1, 0, 0)),
+    "110": ((1, -1, 0), (0, 0, 1), (1, 1, 0)),
+    "111": ((1, 1, -2), (1, -1, 0), (1, 1, 1)),
+}
+
+# normales de plans par famille {hkl} (cristal, à signes près : la
+# déduplication par (|nx|, |ny|, nz) en repère grille les complète)
+_FACET_NORMALS = {
+    "100": ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+    "110": ((1, 1, 0), (1, 0, 1), (0, 1, 1)),
+    "111": ((1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1)),
+}
+
+
+def _min_scan(m: np.ndarray, s: float, axis: int) -> np.ndarray:
+    """res[i] = min_j (m[j] + s·|i−j|) le long de `axis` (deux passages
+    accumulate, O(N))."""
+    n = m.shape[axis]
+    shape = [1] * m.ndim
+    shape[axis] = n
+    idx = np.arange(n, dtype=np.float64).reshape(shape)
+    fwd = np.minimum.accumulate(m - s * idx, axis=axis) + s * idx
+    acc = np.minimum.accumulate(np.flip(m, axis=axis) - s * idx, axis=axis)
+    bwd = np.flip(acc, axis=axis) + s * ((n - 1) - idx)
+    return np.minimum(fwd, bwd)
+
+
+def _min_pyramid(a: np.ndarray, sx: float, sy: float) -> np.ndarray:
+    """min sur (dx, dy) de a[x+dx, y+dy] + sx·|dx| + sy·|dy|
+    (a : +inf hors ancres) — séparable par construction."""
+    return _min_scan(_min_scan(a, sx, 0), sy, 1)
+
+
+@register("cpu", "epitaxy", "seed")
+def epitaxy_seed(grid, depth, material, seed, mask=None):
+    """SEG conforme : flood géodésique 6-voisin depuis la graine à travers
+    l'air (croissance sur toutes les faces exposées de la graine, bloquée
+    par les matériaux inertes) — cf. contrat ops/base.py."""
+    if depth <= 0:
+        return
+    data = grid.data
+    air = data == Materials.AIR
+    if mask is not None:
+        air &= mask[:, :, None]
+    reach = np.zeros(data.shape, dtype=bool)
+    front = _dilate6(data == seed) & air
+    for _ in range(int(depth)):
+        if not front.any():
+            break
+        reach |= front
+        front = _dilate6(reach) & air & ~reach
+    if reach.any():
+        data[reach] = material
+
+
+@register("cpu", "epitaxy", "crystal")
+def epitaxy_crystal(grid, depth, material, orientation="100",
+                    facet_rates=None, seed=None, mask=None):
+    """Épitaxie facettée (construction SEG : plans lents partant des bords
+    de la graine exposée) — cf. contrat ops/base.py. Carte de hauteur,
+    tout vectorisé (min-filtres pyramidaux séparables, aucun temporaire
+    3D float64)."""
+    if depth <= 0:
+        return
+    data = grid.data
+    nx, ny, nz = data.shape
+    t = float(depth)
+    rates = dict(facet_rates or {"100": 1.0, "110": 0.6, "111": 0.25})
+    vmax = max(rates.values())
+    Gx, Gy, Gz = _ORIENTATIONS[orientation]
+    # plans distincts (|nx|, |ny|, nz) par famille, en repère grille
+    planes = []  # (sx, sy, 1/nz, taux)
+    for fam, v in rates.items():
+        seen = set()
+        for n in _FACET_NORMALS[fam]:
+            ng = np.array([np.dot(n, Gx) / np.dot(Gx, Gx),
+                           np.dot(n, Gy) / np.dot(Gy, Gy),
+                           np.dot(n, Gz) / np.dot(Gz, Gz)])
+            ng /= np.linalg.norm(ng)
+            if ng[2] <= 0.05:      # facette quasi verticale : hors carte
+                continue           # de hauteur (documenté)
+            key = (round(abs(ng[0]), 6), round(abs(ng[1]), 6),
+                   round(ng[2], 6))
+            if key in seen:
+                continue
+            seen.add(key)
+            planes.append((key[0] / key[2], key[1] / key[2], 1.0 / key[2],
+                           float(v) / vmax))
+    # surface de la graine exposée à l'air, par colonne (top seed voxel)
+    zidx = np.arange(nz, dtype=np.int64)
+    zseed = np.where(data == seed, zidx[None, None, :],
+                     np.int64(-1)).max(axis=2)
+    if not (zseed >= 0).any():
+        return
+    top_air = np.take_along_axis(
+        data == Materials.AIR, np.minimum(zseed + 1, nz - 1)[..., None],
+        axis=2)[..., 0]
+    surf = (zseed >= 0) & top_air
+    # ancres : colonnes de graine exposée au bord (voisin sans surface de
+    # graine, ou de hauteur différente)
+    zsr = np.where(surf, zseed.astype(np.float64), np.inf)
+    edge = np.zeros((nx, ny), dtype=bool)
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        nb = np.full((nx, ny), np.inf)
+        if dx == 1:
+            nb[1:, :] = zsr[:-1, :]
+        elif dx == -1:
+            nb[:-1, :] = zsr[1:, :]
+        elif dy == 1:
+            nb[:, 1:] = zsr[:, :-1]
+        else:
+            nb[:, :-1] = zsr[:, 1:]
+        diff = np.where(np.isfinite(nb), np.abs(nb - zsr), np.inf)
+        edge |= surf & (~np.isfinite(nb) | (diff >= 0.5))
+    # surface résultante : min(terme vertical, plans de facettes)
+    znew = np.full((nx, ny), np.inf)
+    for sx, sy, inv_nz, v in planes:
+        if sx == 0.0 and sy == 0.0:
+            # plan parallèle au wafer : croissance verticale par colonne
+            cand = np.where(surf, zseed + v * t * inv_nz, np.inf)
+        else:
+            anch = np.where(edge, zseed + v * t * inv_nz, np.inf)
+            cand = _min_pyramid(anch, sx, sy)
+        znew = np.minimum(znew, cand)
+    znew = np.where(surf, znew, np.inf)
+    # remplissage : air au-dessus de la graine, jusqu'à znew, sans
+    # traverser un matériau (surplomb -> on s'arrête)
+    zfill = np.where(np.isfinite(znew),
+                     np.rint(np.minimum(znew, nz - 1)),
+                     np.int64(-1)).astype(np.int64)
+    zi = zidx[None, None, :]
+    blocked = (data != Materials.AIR) & (zi > zseed[..., None])
+    zblock = np.where(blocked, zi, np.int64(nz)).min(axis=2)
+    fill = ((data == Materials.AIR) & (zseed >= 0)[..., None]
+            & (zi > zseed[..., None]) & (zi <= zfill[..., None])
+            & (zi < zblock[..., None]))
+    if mask is not None:
+        fill &= mask[:, :, None]
+    if fill.any():
+        data[fill] = material
+
+
 @register("cpu", "fill")
 def fill_trench(grid, material, max_z):
     """

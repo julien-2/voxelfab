@@ -79,6 +79,43 @@ nm -> voxels est faite par l'orchestrateur) :
           vrai dip de nettoyage post-siliciuration.
         - mask : limite la réaction aux colonnes ouvertes.
 
+    epitaxy[seed](grid, depth_voxels, material, seed, mask=None)
+        Épitaxie sélective (SEG) conforme : dépose `material` uniquement
+        depuis les surfaces de la graine `seed` exposées à l'air, en
+        suivant la géodésie à travers l'air (croix 6-voisine, distance
+        L1 <= depth_voxels). Les matériaux inertes (oxyde, nitrure)
+        bloquent la croissance : pas de dépôt au-dessus du masque, même
+        en face. `mask` restreint en plus les colonnes. Croissance sur
+        toutes les faces exposées (fond de fenêtre + parois de graine).
+        Coins légèrement plus « pointus » que deposit conformal (L1
+        géodésique vs boule exacte), même convention que les grands
+        rayons des autres ops.
+
+    epitaxy[crystal](grid, depth_voxels, material, orientation="100",
+                     facet_rates=None, seed=None, mask=None)
+        Épitaxie facettée : la construction SEG classique — la croissance
+        verticale est limitée par des plans cristallographiques lents
+        partant des bords de la graine exposée (facettes {111} à 54,7°
+        du plan de wafer (100) ; toit ou diamant dans les fenêtres
+        étroites, ex. SiGe épitaxié en source/drain).
+        - facet_rates : {famille: taux relatif} sur '100'/'110'/'111',
+          normalisé au maximum ; défaut : Si CVD typique
+          {'100': 1.0, '110': 0.6, '111': 0.25}.
+        - orientation : '100'/'110'/'111' = plan de wafer (normale =
+          axe z grille) ; la famille la plus parallèle au wafer donne
+          le terme de croissance verticale : depth_voxels × taux / n_z.
+        - chaque famille émet, depuis chaque colonne de bord de la
+          graine, des plans inclinés avançant de taux × depth_voxels en
+          distance normale ; la surface résultante est le minimum entre
+          le terme vertical et tous les plans de facettes — près des
+          bords, les facettes (plus basses) dominent, d'où le toit
+          facetté ; loin des bords, la croissance verticale reprend.
+        - la croissance ne démarre que sur la graine exposée à l'air ;
+          pas de croissance hors graine (pas de débordement au-dessus
+          du masque), pas de surplomb (carte de hauteur) ; les facettes
+          quasi verticales (n_z <= 0.05) sont ignorées.
+        - mask : restreint les colonnes de remplissage.
+
     fill(grid, material, max_z)
         Remplit les volumes d'air connectés à la surface et situés sous
         z <= max_z (surface du wafer avant gravure).
