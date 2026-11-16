@@ -325,7 +325,14 @@ dominantes près des bords ; tous égaux → croissance verticale plate.
 - défaut : `{'100': 1.0, '110': 0.6, '111': 0.25}` (Si CVD typique) ;
 - l'orientation `'110'`/`'111'` tourne le repère cristallin : les angles
   de facettes et la famille dominante suivent la cristallographie
-  (sur (110), la famille la plus parallèle au wafer est {111}) ;
+  (la famille la plus parallèle au wafer (100)/(110)/(111) est
+  {100}/{110}/{111} respectivement) ;
+- chaque facette ne s'ancre que sur les bords de graine
+  **perpendiculaires à sa montée** (un plan de facette contient l'arête
+  sur laquelle il repose) : sur une fenêtre alignée aux axes, les
+  facettes {111} partent des **coins** et les {110} le long des bords ;
+  un bord de grille n'est pas un bord de graine (le wafer continue) —
+  un substrat nu croît donc verticalement, sans facette ;
 - la croissance ne démarre que sur la graine exposée à l'air : pas de
   débordement au-dessus du masque, pas de croissance sur l'oxyde.
 

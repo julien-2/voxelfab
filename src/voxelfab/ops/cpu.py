@@ -488,19 +488,29 @@ def epitaxy_crystal(grid, depth, material, orientation="100",
     # ancres : colonnes de graine exposée au bord (voisin sans surface de
     # graine, ou de hauteur différente)
     zsr = np.where(surf, zseed.astype(np.float64), np.inf)
-    edge = np.zeros((nx, ny), dtype=bool)
-    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-        nb = np.full((nx, ny), np.inf)
-        if dx == 1:
-            nb[1:, :] = zsr[:-1, :]
-        elif dx == -1:
-            nb[:-1, :] = zsr[1:, :]
-        elif dy == 1:
-            nb[:, 1:] = zsr[:, :-1]
-        else:
-            nb[:, :-1] = zsr[:, 1:]
-        diff = np.where(np.isfinite(nb), np.abs(nb - zsr), np.inf)
-        edge |= surf & (~np.isfinite(nb) | (diff >= 0.5))
+    # bords de la graine exposée, PAR AXE : un voisin hors grille n'est pas
+    # un bord (le wafer continue) -> on réplique ; un voisin sans surface
+    # de graine ou de hauteur différente (>= 1/2 voxel) en est un.
+    edge_x = np.zeros((nx, ny), dtype=bool)
+    edge_y = np.zeros((nx, ny), dtype=bool)
+    for axis in (0, 1):
+        for sgn in (-1, 1):
+            nb = zsr.copy()
+            if axis == 0 and sgn == 1:
+                nb[1:, :] = zsr[:-1, :]
+            elif axis == 0:
+                nb[:-1, :] = zsr[1:, :]
+            elif sgn == 1:
+                nb[:, 1:] = zsr[:, :-1]
+            else:
+                nb[:, :-1] = zsr[:, 1:]
+            diff = np.where(np.isfinite(nb) & np.isfinite(zsr),
+                            np.abs(nb - zsr), np.inf)
+            bad = (~np.isfinite(nb)) | (diff >= 0.5)
+            if axis == 0:
+                edge_x |= surf & bad
+            else:
+                edge_y |= surf & bad
     # surface résultante : min(terme vertical, plans de facettes)
     znew = np.full((nx, ny), np.inf)
     for sx, sy, inv_nz, v in planes:
@@ -508,7 +518,17 @@ def epitaxy_crystal(grid, depth, material, orientation="100",
             # plan parallèle au wafer : croissance verticale par colonne
             cand = np.where(surf, zseed + v * t * inv_nz, np.inf)
         else:
-            anch = np.where(edge, zseed + v * t * inv_nz, np.inf)
+            # un plan de facette contient la ligne d'arête sur laquelle il
+            # repose : il ne peut s'ancre que sur les bords PERPENDICULAIRES
+            # à sa montée (sx > 0 -> bord en x ; sy > 0 -> bord en y ;
+            # les deux -> coins seulement). Sinon un plan (0, sy) ancré sur
+            # un bord en x couvrirait toute la rangée à basse hauteur.
+            anch_ok = surf
+            if sx > 0.0:
+                anch_ok = anch_ok & edge_x
+            if sy > 0.0:
+                anch_ok = anch_ok & edge_y
+            anch = np.where(anch_ok, zseed + v * t * inv_nz, np.inf)
             cand = _min_pyramid(anch, sx, sy)
         znew = np.minimum(znew, cand)
     znew = np.where(surf, znew, np.inf)

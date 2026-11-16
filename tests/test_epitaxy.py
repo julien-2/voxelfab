@@ -94,17 +94,23 @@ def test_seed_mask_limits_columns():
 
 def test_crystal_faceted_mesa_roof():
     """Fenêtre 8×8, depth 12, rates Si typiques : les facettes {111}
-    partant des bords dominent -> toit facetté (pente 1/voxel par axe,
-    soit 54,7° de dip vrai le long de la diagonale)."""
+    (slopes (1,1)) ne s'ancrent qu'aux COINS de la fenêtre, les {110}
+    (slopes (1,0)/(0,1)) aux bords latéraux. Offset {111} =
+    sqrt(3)*0.25*12 = 5.196 au-dessus de la graine (z = 7) -> hauteur
+    au coin 12.2 ; le terme vertical (7 + 12 = 19) plafonne le centre.
+    Profil le long de x à y = 16 (dist. L1 au coin le plus proche) :
+    x=12 : 12.196+3 = 15.2 -> 15 ; x=13 : 16.2 -> 16 ; x=15 : 18.2 -> 18 ;
+    x>=16 : plafonné à 19."""
     g, Si, SiO2, GaAs, win = _seg_wafer()
     get_step("cpu", "epitaxy", "crystal")(g, 12, Si, seed=Si)
-    # profil en toit le long de x (y au centre de la fenêtre) :
-    # bord : 7 + sqrt(3)*0.25*12 = 12.2 -> 12 ; centre : 15.2 -> 15
-    assert g.data[12, 16, 12] == Si and g.data[12, 16, 13] == 0
-    assert g.data[13, 16, 13] == Si             # pente 1/voxel (facette)
-    assert g.data[15, 16, 15] == Si and g.data[15, 16, 16] == 0
-    assert g.data[16, 16, 15] == Si             # apex du toit
-    assert g.data[19, 16, 12] == Si             # symétrie
+    # coin de fenêtre (12,12) : facette {111} -> z = 7 + 5.196 = 12.2 -> 12
+    assert g.data[12, 12, 12] == Si and g.data[12, 12, 13] == 0
+    # milieu du bord (12,16) : 3 voxels du coin (12,19) -> 15.2 -> 15
+    assert g.data[12, 16, 15] == Si and g.data[12, 16, 16] == 0
+    assert g.data[13, 16, 16] == Si             # pente 1/voxel (facette)
+    assert g.data[15, 16, 18] == Si and g.data[15, 16, 19] == 0
+    assert g.data[16, 16, 19] == Si and g.data[16, 16, 20] == 0  # plafond 19
+    assert g.data[19, 16, 15] == Si             # symétrie
     # pas de croissance hors de la graine : oxyde et air au-dessus intacts
     assert g.data[10, 16, 13] == SiO2
     assert g.data[10, 16, 14] == 0
@@ -126,7 +132,7 @@ def test_crystal_flat_wafer_no_edges_no_facets():
 def test_crystal_orientation_110():
     """Wafer (110) : la famille la plus parallèle est {110} (taux 0.6) ->
     croissance verticale = 0.6 × depth."""
-    g, Si = _flat_wafer()
+    g, Si = _flat_wafer(nx=32, ny=32)
     get_step("cpu", "epitaxy", "crystal")(g, 5, Si, seed=Si,
                                           orientation="110")
     col = g.data[5, 16, :]

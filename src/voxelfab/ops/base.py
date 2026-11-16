@@ -104,12 +104,18 @@ nm -> voxels est faite par l'orchestrateur) :
         - orientation : '100'/'110'/'111' = plan de wafer (normale =
           axe z grille) ; la famille la plus parallèle au wafer donne
           le terme de croissance verticale : depth_voxels × taux / n_z.
-        - chaque famille émet, depuis chaque colonne de bord de la
-          graine, des plans inclinés avançant de taux × depth_voxels en
-          distance normale ; la surface résultante est le minimum entre
-          le terme vertical et tous les plans de facettes — près des
-          bords, les facettes (plus basses) dominent, d'où le toit
-          facetté ; loin des bords, la croissance verticale reprend.
+        - chaque famille émet, depuis les colonnes de bord de la graine
+          exposée, des plans inclinés avançant de taux × depth_voxels en
+          distance normale ; un plan de facette contient l'arête sur
+          laquelle il repose : il ne s'ancre que sur les bords
+          PERPENDICULAIRES à sa montée (pente en x -> bords en x ; pente
+          en x et y -> coins seulement ; ex. facettes {111} aux coins
+          d'une fenêtre alignée aux axes, {110} le long des bords) ; un
+          voisin hors grille n'est pas un bord (le wafer continue) ; la
+          surface résultante est le minimum entre le terme vertical et
+          tous les plans de facettes — près des bords, les facettes
+          (plus basses) dominent, d'où le toit facetté ; loin des bords,
+          la croissance verticale reprend.
         - la croissance ne démarre que sur la graine exposée à l'air ;
           pas de croissance hors graine (pas de débordement au-dessus
           du masque), pas de surplomb (carte de hauteur) ; les facettes
