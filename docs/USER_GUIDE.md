@@ -99,7 +99,71 @@ with h5py.File("out/structure.h5", "r") as f:
 
 ## 4. Le deck YAML — référence complète
 
-### 4.1 Squelette
+### 4.1 Choisir sa résolution
+
+Dans voxelfab, la résolution est **un seul paramètre : `pitch_nm`** — la
+taille d'un voxel en nanomètres. Tout le reste en découle.
+
+**La chaîne de conversion.** Les étapes du deck parlent en nm ; le moteur
+les convertit en voxels à l'exécution : `n = round(thickness_nm / pitch)`
+(minimum 1 voxel si l'épaisseur est > 0).
+
+| `thickness_nm` | `pitch_nm` | Voxels réellement déposés/gravés |
+| --- | --- | --- |
+| 4.0 | 2.0 | 2 |
+| 1.0 | 2.0 | **1** (arrondi 0.5 → 0, forcé à 1) |
+| 0.4 | 2.0 | **1** (minimum 1 si > 0) |
+| 4.0 | 1.0 | 4 |
+
+Deux conséquences :
+
+- **Quantification** : un dépôt de 1 nm avec un pitch de 2 nm dépose quand
+  même 1 voxel (2 nm). Le moteur ne représente rien en dessous du pitch.
+  Règle pratique : **`pitch_nm` ≤ plus petite dimension critique / 2**.
+  Un oxyde de grille de 4 nm veut un pitch de 2 nm (2 voxels, minimum pour
+  voir quelque chose) ou 1 nm (4 voxels, plus précis, 8× plus cher).
+- **La résolution est la même dans les 3 directions** : `pitch_nm` s'applique
+  aussi à `z` (les gravures descendent voxel par voxel).
+
+**Ce qu'on configure.**
+
+```yaml
+grid: {pitch_nm: 2.0, nx: 120, ny: 60, nz: 64}
+```
+
+- `pitch_nm` : la résolution physique (nm/voxel)
+- `nx, ny, nz` : la taille de la boîte de simulation en voxels — l'étendue
+  simulée est `nx × pitch` nm en x, etc.
+
+Avec un **layout** GDS/OAS (§8), `nx`/`ny` sont ignorés : ils sont déduits
+de la bounding box du layout et du pitch. C'est donc **le pitch qui décide
+de la finesse** de rasterisation du layout ; seuls `pitch_nm` et `nz`
+restent à vous.
+
+**Le piège : `target_z` et `to_plane_z`.** Ces deux paramètres (`cmp`,
+`fill`) sont en **index de voxel**, pas en nm — ils se lisent directement
+sur la géométrie. Si vous changez le pitch, ils ne sont plus valables :
+le plan STI de la démo est `target_z: 19` à pitch 2.0 (38 nm au-dessus du
+bas de grille), donc `target_z: 38` à pitch 1.0 pour le même plan physique.
+C'est la seule partie du DSL qui dépend de la résolution.
+
+**Coût mémoire.** La grille fait 1 octet/voxel (uint8) ; comptez 2 à 3× la
+taille de la grille en temporaires pendant les opérations booléennes
+(la gravure directionnelle Numba travaille en place, quasi sans
+temporaire). `vf bench 256` chronomètre chaque type d'étape à 16,7 M voxels.
+
+| Grille | Voxels | RAM grille | Étendue physique @ 2 nm |
+| --- | --- | --- | --- |
+| 120×60×64 | 0,46 M | ~0,5 Mo | 240×120×128 nm |
+| 500³ | 125 M | ~125 Mo | 1 µm cube |
+| 100 M | ~460³ | ~100 Mo | ~0,92 µm cube |
+
+**Effet sur le déterminisme** : le hash `structure_sha256` dépend du pitch
+— changer `pitch_nm` change la structure octet par octet. C'est normal :
+le golden ne se régénère que si la **sémantique** change (§7), pas si vous
+expérimentez le pitch dans votre propre deck.
+
+### 4.2 Le squelette du deck
 
 ```yaml
 version: 1                      # version du format (obligatoire)
@@ -125,10 +189,10 @@ outputs:                        # h5 | views | vtk | stl | report
 
 **Règles d'unités** : toute longueur est en **nm** (`*_nm`) ; les plans
 verticaux (`target_z`, `to_plane_z`) sont en **index de voxel** car ils
-sont lus directement sur la géométrie. Les matériaux sont toujours
-référencés par nom.
+sont lus directement sur la géométrie (voir §4.1). Les matériaux sont
+toujours référencés par nom.
 
-### 4.2 Les étapes (`steps`)
+### 4.3 Les étapes (`steps`)
 
 #### `substrate` — substrat
 
@@ -176,7 +240,7 @@ dépôt. C'est ainsi qu'on modélise une épitaxie sélective.
 | `isotropic` | Attaque uniforme dans toutes les directions depuis toute surface exposée à l'air (érosion euclidienne du solide). |
 
 Paramètres : `materials` (sélectivité — absent = grave tout), `until`
-(matériau d'arrêt, directional seulement), `mask` (§4.3).
+(matériau d'arrêt, directional seulement), `mask` (§4.4).
 
 #### `litho` — lithographie + transfert
 
@@ -194,8 +258,8 @@ sélectivité ni matériau d'arrêt par défaut).
 ```
 
 Remplit les volumes d'air **connectés à la surface** et situés sous le plan
-`to_plane_z` (index de voxel). Les cavités fermées ne sont pas remplies —
-comme dans un vrai procédé de spin-on/flowable.
+`to_plane_z` (index de voxel, voir §4.1). Les cavités fermées ne sont pas
+remplies — comme dans un vrai procédé de spin-on/flowable.
 
 #### `cmp` — planarisation mécanique
 
@@ -204,12 +268,12 @@ comme dans un vrai procédé de spin-on/flowable.
 - {op: cmp, target_z: 52, stop_on: Si}
 ```
 
-Abrase **tout voxel solide au-dessus du plan** `target_z` (index de voxel).
-`stop_on` : matériau jamais traversé (première occurrence depuis la
-surface). Retire typiquement le relief d'un dépôt conformal ou les bouchons
-après remplissage.
+Abrase **tout voxel solide au-dessus du plan** `target_z` (index de voxel,
+voir §4.1). `stop_on` : matériau jamais traversé (première occurrence
+depuis la surface). Retire typiquement le relief d'un dépôt conformal ou
+les bouchons après remplissage.
 
-### 4.3 Les masques
+### 4.4 Les masques
 
 Un masque est un champ 2D booléen sur `(x, y)` : `True` = zone ouverte
 (gravée/déposée). Quatre formes, composables :
@@ -224,7 +288,7 @@ mask: {invert: {rect: [0.34, 0.52, 0.08, 0.92]}}   # complément, composable
 `invert` s'applique à n'importe quel masque, y compris `{layer: ...}` —
 c'est ainsi qu'on grave *partout sauf* la grille.
 
-### 4.4 Les sorties (`outputs`)
+### 4.5 Les sorties (`outputs`)
 
 | Type | Fichier | Dépendance |
 | --- | --- | --- |
