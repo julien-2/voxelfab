@@ -6,7 +6,7 @@ C'est ce que vérifient tests/test_golden.py (référence commitée) et les
 tests d'équivalence inter-backends.
 
 Signatures uniformes (les épaisseurs sont en VOXELS ici ; la conversion
-nm -> voxels est faite par Process) :
+nm -> voxels est faite par l'orchestrateur) :
 
     substrate(grid, material, thickness_nm)
         Remplit le fond de la grille (z < épaisseur) avec `material`.
@@ -30,6 +30,25 @@ nm -> voxels est faite par Process) :
                       voxels d'air, retire jusqu'à t voxels de matériau
                       autorisé, s'arrête sur un matériau d'arrêt
                       (until_material) ou non autorisé.
+
+    etch_selective[mode](grid, depth_voxels, rates, until_material=None,
+                         mask=None)
+        Gravure à sélectivité différentielle. `rates` associe un id de
+        matériau à sa vitesse RELATIVE (le matériau de référence a un
+        taux de 1.0 et `depth_voxels` est la profondeur gravie DANS ce
+        matériau de référence). Les matériaux absents de `rates` ne sont
+        jamais gravés (ils bloquent, comme un matériau d'arrêt).
+        directional : même parcours par colonne que etch directional,
+                      mais avec un budget de temps B = depth_voxels :
+                      retirer un voxel du matériau m coûte 1/rate_m ;
+                      arrêt sur until_material, sur un matériau absent
+                      de rates (taux 0), ou quand le budget ne suffit
+                      plus pour le voxel courant.
+        isotropic   : chaque matériau m est érodé du rayon
+                      round(depth_voxels * rate_m) (érosion euclidienne
+                      du solide, restreinte à m). Approximation assumée :
+                      les interfaces inter-matériaux comptent comme des
+                      surfaces d'attaque. until_material est ignoré.
 
     fill(grid, material, max_z)
         Remplit les volumes d'air connectés à la surface et situés sous

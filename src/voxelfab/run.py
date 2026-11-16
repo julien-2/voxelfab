@@ -178,6 +178,28 @@ class DeckRunner:
             self._log(f"etch {mode} {t} vx"
                       + (f" sur {tuple(step['materials'])}" if step.get("materials") else ""))
 
+        elif op == "etch_selective":
+            mode = step.get("mode", "directional")
+            t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
+            rates = step.get("rates")
+            if not isinstance(rates, dict) or not rates:
+                raise DeckError("'rates: {matériau: taux}' requis "
+                                "(taux relatif, référence = 1.0)")
+            rates_by_id = {}
+            for k, v in rates.items():
+                if isinstance(k, bool):
+                    raise DeckError("clé YAML booléenne dans 'rates' — "
+                                    "coter le nom du matériau ('on': …)")
+                if float(v) <= 0:
+                    raise DeckError(f"taux <= 0 pour {k!r} : {v!r}")
+                rates_by_id[self._mid(k)] = float(v)
+            until = self._mid(step["until"]) if "until" in step else None
+            get_step(self.backend, "etch_selective", mode)(
+                g, t, rates_by_id, until_material=until,
+                mask=self._mask(step.get("mask"), where))
+            self._log(f"etch_selective {mode} {t} vx "
+                      f"({', '.join(f'{k}×{v:g}' for k, v in rates.items())})")
+
         elif op == "litho":
             t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
             materials = self._mids(step.get("materials")) or None

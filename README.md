@@ -7,8 +7,9 @@ steps, layouts in, 3D structures and virtual metrology out.
 ## What it does
 
 - **Voxel process kernel** (NumPy/SciPy, Numba-accelerated): conformal and
-  directional deposition, isotropic and directional etch, lithography, CMP,
-  trench fill — all vectorized, calibrated for 1–100M-voxel grids.
+  directional deposition, isotropic, directional and selective
+  (rate-differential) etch, lithography, CMP, trench fill — all vectorized,
+  calibrated for 1–100M-voxel grids.
 - **Process decks** (YAML): the flow is a versioned file (`steps:`,
   `materials:`, `outputs:`), with provenance + structure hashing for
   deterministic runs.
@@ -62,9 +63,10 @@ provenance), `mos3d.png` (top view + cross-sections), `report.json`
     ├── layout.py      GDS/OASIS import (extra [layout])
     └── cli.py         vf run | info | demo | bench
 
-    decks/demo_deck.yaml   shipped example deck (planar MOSFET)
-    tests/test_golden.py   golden structure test (byte-exact determinism)
-    tests/test_h5.py       HDF5 round-trip + provenance tests
+    decks/demo_deck.yaml        shipped example deck (planar MOSFET)
+    tests/test_golden.py        golden structure test (byte-exact determinism)
+    tests/test_h5.py            HDF5 round-trip + provenance tests
+    tests/test_etch_selective.py  rate-differential etch (incl. etch equivalence)
 
 ## Roadmap
 

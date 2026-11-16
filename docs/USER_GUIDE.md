@@ -48,7 +48,7 @@ Avec [uv](https://docs.astral.sh/uv/) (recommandé) :
 
 ```bash
 uv pip install .                 # coeur : numpy, scipy, matplotlib, pyyaml, h5py
-uv pip install ".[bench]"        # + Numba (fortement recommandé : gravure directionnelle parallélisée)
+uv pip install ".[bench]"        # + Numba (fortement recommandé : gravures directionnelles parallélisées)
 uv pip install ".[layout]"       # + import GDS/OASIS (gdstk, shapely)
 uv pip install ".[view]"         # + export VTK (pyvista)
 uv pip install -e ".[dev]"       # développement (pytest)
@@ -241,6 +241,38 @@ dépôt. C'est ainsi qu'on modélise une épitaxie sélective.
 
 Paramètres : `materials` (sélectivité — absent = grave tout), `until`
 (matériau d'arrêt, directional seulement), `mask` (§4.4).
+
+> Limite : tous les matériaux listés sont gravés **au même rythme**. Pour
+> des vitesses différentielles (sélectivité réelle), voir `etch_selective`.
+
+#### `etch_selective` — gravure à sélectivité différentielle
+
+```yaml
+- {op: etch_selective, depth_nm: 30, rates: {SiO2: 10.0, SiN: 1.0},
+   mask: {layer: pad_open}}
+- {op: etch_selective, depth_nm: 20, mode: isotropic,
+   rates: {SiO2: 8.0, Si: 1.0}, mask: {layer: open}}
+```
+
+`rates` associe chaque matériau à sa **vitesse relative** ; le matériau de
+référence (taux 1.0) est gravé de `depth_nm` — les autres proportionnellement.
+
+| Mode | Sémantique |
+| --- | --- |
+| `directional` (défaut) | Même parcours par colonne que `etch` directional, mais avec un **budget de temps** : retirer un voxel du matériau m coûte `1/rate_m`. Arrêt sur `until`, sur un matériau absent de `rates`, ou budget épuisé. |
+| `isotropic` | Chaque matériau m est érodé du rayon `round(depth_nm × rate_m)`. Approximation documentée : les interfaces inter-matériaux comptent comme des surfaces d'attaque. `until` ignoré. |
+
+Points clés :
+
+- les matériaux **absents de `rates` ne sont jamais gravés** et bloquent la
+  gravure comme un matériau d'arrêt — c'est le comportement attendu d'un
+  wet etch sélectif (ex. : grave SiO2, stop sur SiN) ;
+- `depth_nm` est la profondeur dans le matériau de référence : avec
+  `rates: {SiO2: 10.0, SiN: 1.0}` et `depth_nm: 30`, le SiO2 est gravé de
+  300 nm « équivalents » et le SiN de 30 ;
+- **équivalence garantie** : `rates: {m: 1.0}` reproduit exactement `etch`
+  (directional et isotropic) — c'est testé (`tests/test_etch_selective.py`),
+  et le futur backend GPU devra le respecter aussi.
 
 #### `litho` — lithographie + transfert
 

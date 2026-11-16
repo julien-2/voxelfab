@@ -14,9 +14,10 @@ Choix de performance :
      hauteur, aucune boucle Python par colonne.
   3. Hygiène mémoire : uint8/bool partout (1 octet/voxel), sélections de
      matériaux par LUT 256 entrées au lieu de np.isin.
-  4. etch directional : noyau Numba @njit(parallel=True) — parcours
-     séquentiel par colonne (sémantique exacte), parallèle sur les
-     colonnes ; retour vectorisé NumPy si Numba est absent.
+  4. etch directional / etch_selective directional : noyaux Numba
+     @njit(parallel=True) — parcours séquentiel par colonne (sémantique
+     exacte), parallèle sur les colonnes ; retour vectorisé NumPy si
+     Numba est absent.
 """
 
 from __future__ import annotations
@@ -73,9 +74,17 @@ def _allowed_lut(materials) -> np.ndarray:
     return lut
 
 
+def _rates_lut(rates: dict) -> np.ndarray:
+    """LUT float64 (256,) des taux relatifs ; 0.0 = matériau non gravé."""
+    lut = np.zeros(256, dtype=np.float64)
+    for mid, rate in rates.items():
+        lut[mid] = float(rate)
+    return lut
+
+
 # --------------------------------------------------------------------------
-# Noyau Numba : gravure directionnelle (sémantique séquentielle par colonne,
-# parallélisée sur tous les coeurs)
+# Noyaux Numba : gravures directionnelles (sémantique séquentielle par
+# colonne, parallélisée sur tous les coeurs)
 # --------------------------------------------------------------------------
 
 if HAS_NUMBA:
@@ -117,6 +126,47 @@ if HAS_NUMBA:
                 dug += 1
                 z -= 1
 
+    @njit(parallel=True, cache=True)
+    def _etch_selective_kernel(data, open_mask, budget, stop_on, rates):
+        """
+        Gravure directionnelle à sélectivité différentielle.
+        Pour chaque colonne ouverte du masque, budget de temps B = budget :
+          - part du sommet solide, descend en sautant les voxels d'air ;
+          - retirer un voxel du matériau m coûte 1/rates[m] ;
+          - s'arrête sur un matériau d'arrêt, absent de rates (taux 0),
+            ou quand le budget ne suffit plus pour le voxel courant.
+        data    : uint8 (nx, ny, nz), modifié sur place
+        rates   : float64 (256,) taux relatifs (0 = non gravé)
+        """
+        nx, ny, nz = data.shape
+        for i in prange(nx * ny):
+            x = i // ny
+            y = i % ny
+            if not open_mask[x, y]:
+                continue
+            z = -1
+            for zz in range(nz - 1, -1, -1):         # sommet solide
+                if data[x, y, zz] != 0:
+                    z = zz
+                    break
+            b = budget
+            while z >= 0 and b > 0.0:
+                mid = data[x, y, z]
+                if mid == 0:                          # air : on traverse
+                    z -= 1
+                    continue
+                if stop_on >= 0 and mid == stop_on:   # matériau d'arrêt
+                    break
+                r = rates[mid]
+                if r <= 0.0:                          # absent de rates
+                    break
+                cost = 1.0 / r
+                if b < cost:                          # budget insuffisant
+                    break
+                data[x, y, z] = 0
+                b -= cost
+                z -= 1
+
 
 def _etch_directional_fallback(grid, t, stop_on, materials, open_mask):
     """Retour vectorisé (sans Numba) : on dépouille une couche de voxels
@@ -137,6 +187,32 @@ def _etch_directional_fallback(grid, t, stop_on, materials, open_mask):
         if not rem.any():
             break
         grid.data[xs[rem], ys[rem], z[rem]] = 0
+
+
+def _etch_selective_fallback(grid, budget, rates_lut, open_mask,
+                             until_material):
+    """Retour vectorisé (sans Numba) de la gravure sélective : dépouille
+    une couche par passe, avec un budget de temps par colonne."""
+    b = np.full((grid.nx, grid.ny), float(budget))
+    open_ = open_mask if open_mask is not None else np.ones(
+        (grid.nx, grid.ny), bool)
+    while True:
+        h = grid.height_map()
+        xs, ys = np.nonzero((h >= 0) & open_ & (b > 0.0))
+        if xs.size == 0:
+            break
+        z = h[xs, ys]
+        mid = grid.data[xs, ys, z]
+        rate = rates_lut[mid]
+        cost = np.where(rate > 0, 1.0 / np.where(rate > 0, rate, 1.0),
+                        np.inf)
+        rem = (rate > 0) & (b[xs, ys] >= cost)
+        if until_material is not None:
+            rem &= mid != until_material
+        if not rem.any():
+            break
+        grid.data[xs[rem], ys[rem], z[rem]] = 0
+        b[xs[rem], ys[rem]] -= cost[rem]
 
 
 # --------------------------------------------------------------------------
@@ -199,6 +275,44 @@ def etch_directional(grid, t, materials=None, until_material=None, mask=None):
     else:
         _etch_directional_fallback(grid, t, stop if stop >= 0 else None,
                                    materials, mask)
+
+
+@register("cpu", "etch_selective", "directional")
+def etch_selective_directional(grid, depth, rates, until_material=None,
+                               mask=None):
+    if depth <= 0 or not rates:
+        return
+    rates_lut = _rates_lut(rates)
+    open_mask = mask if mask is not None else np.ones((grid.nx, grid.ny), bool)
+    stop = -1 if until_material is None else until_material
+    if HAS_NUMBA:
+        _etch_selective_kernel(grid.data, open_mask, float(depth), stop,
+                               rates_lut)
+    else:
+        _etch_selective_fallback(grid, float(depth), rates_lut, open_mask,
+                                 until_material)
+
+
+@register("cpu", "etch_selective", "isotropic")
+def etch_selective_isotropic(grid, depth, rates, until_material=None,
+                             mask=None):
+    """Chaque matériau m est érodé de round(depth * rate_m) ; les matériaux
+    absents de rates sont intacts. until_material est ignoré (cf. contrat)."""
+    if depth <= 0 or not rates:
+        return
+    solid = grid.solid()
+    keep = ~grid.select(tuple(rates.keys()))   # hors rates : intact
+    for mid, rate in rates.items():
+        r = int(round(depth * float(rate)))
+        m = grid.data == mid
+        if r <= 0:
+            keep |= m
+        else:
+            keep |= _erode(solid, r) & m
+    remove = solid & ~keep
+    if mask is not None:
+        remove &= mask[:, :, None]
+    grid.data[remove] = Materials.AIR
 
 
 @register("cpu", "fill")
