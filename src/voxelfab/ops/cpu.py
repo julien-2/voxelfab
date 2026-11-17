@@ -504,8 +504,11 @@ def epitaxy_crystal(grid, depth, material, orientation="100",
                 nb[:, 1:] = zsr[:, :-1]
             else:
                 nb[:, :-1] = zsr[:, 1:]
-            diff = np.where(np.isfinite(nb) & np.isfinite(zsr),
-                            np.abs(nb - zsr), np.inf)
+            # np.where évalue np.abs(nb - zsr) partout (inf - inf -> nan,
+            # sélectionné ensuite) : on tait l'avertissement invalide.
+            with np.errstate(invalid="ignore"):
+                diff = np.where(np.isfinite(nb) & np.isfinite(zsr),
+                                np.abs(nb - zsr), np.inf)
             bad = (~np.isfinite(nb)) | (diff >= 0.5)
             if axis == 0:
                 edge_x |= surf & bad
