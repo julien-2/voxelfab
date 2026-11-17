@@ -559,6 +559,93 @@ met.cd(y, mid)                # plus grande largeur continue sur la coupe y (CD)
 met.report()                  # fractions volumiques
 ```
 
+### 6.4 Visualiser dans ParaView
+
+**ParaView n'ouvre pas `structure.h5` directement** : c'est un HDF5
+maison (`/grid` uint8 + table `/materials`), pas un fichier Xdmf ou VTK
+HDF. Trois routes, de la plus simple à la plus intégrée.
+
+#### Route A — la sortie `vtk` native (recommandée)
+
+```bash
+uv pip install ".[view]"          # pyvista
+```
+
+```yaml
+outputs:
+  - {type: h5,   file: structure.h5}
+  - {type: vtk,  file: structure.vtk}
+```
+
+`vf run` produit un `structure.vtk` que ParaView ouvre tel quel : une
+image 3D avec un champ de cellules `material` (0 = air, puis les ids de
+la table `/materials`). Le pas vaut 1 unité = 1 voxel (coordonnées en
+voxels, pas en nm).
+
+#### Route B — pont Xdmf (le `.h5` reste la source unique)
+
+Un petit fichier `.xmf` pointe vers `/grid` ; ParaView lit le HDF5 à
+travers. Attention : Xdmf énumère les dimensions **du plus rapide au plus
+lent** (z, y, x), l'inverse de NumPy. Générateur une fois pour toutes :
+
+```python
+import h5py
+
+with h5py.File("out/structure.h5") as f:
+    nx, ny, nz = f["grid"].shape
+    p = float(f.attrs["pitch_nm"])
+
+xml = f"""<?xml version="1.0" ?>
+<Xdmf Version="2.0">
+  <Domain>
+    <Grid Name="voxelfab">
+      <Topology TopologyType="3DCoRectMesh" NumberOfElements="{nz+1} {ny+1} {nx+1}"/>
+      <Geometry GeometryType="ORIGIN_DXDYDZ">
+        <DataItem Format="XML" Dimensions="3">0 0 0</DataItem>
+        <DataItem Format="XML" Dimensions="3">{p} {p} {p}</DataItem>
+      </Geometry>
+      <Attribute Name="material" AttributeType="Scalar" Center="Cell">
+        <DataItem Format="HDF" Dimensions="{nz} {ny} {nx}"
+                  NumberType="UInt" Precision="1">structure.h5:/grid</DataItem>
+      </Attribute>
+    </Grid>
+  </Domain>
+</Xdmf>
+"""
+open("out/structure.xmf", "w").write(xml)
+```
+
+Poser `structure.xmf` **à côté de** `structure.h5`, ouvrir le `.xmf` dans
+ParaView. Avantage sur la route A : les coordonnées sont en
+**nanomètres réels** (le pas vient de `pitch_nm` lu dans les attrs) et le
+`.h5` reste le format canonique.
+
+#### Route C — conversion ponctuelle en `.vti` (sans relancer le deck)
+
+```python
+import h5py, numpy as np, pyvista as pv
+
+with h5py.File("out/structure.h5") as f:
+    data = f["grid"][()]
+    p = float(f.attrs["pitch_nm"])
+
+nx, ny, nz = data.shape
+img = pv.ImageData(dimensions=(nx + 1, ny + 1, nz + 1),
+                   spacing=(p, p, p))
+img.cell_data["material"] = data.flatten(order="F").astype(np.int32)
+img.save("out/structure.vti")
+```
+
+#### Réglages utiles dans ParaView
+
+- **Masquer l'air** : l'id 0 remplit toute la boîte → filtre **Threshold**
+  sur `material` (Minimum = 1), ou **Clip** pour une vue en coupe ;
+- **Couleurs** : `Color by → material` en couleurs discrètes
+  (*Rescale Mode → Never*), et reproduire les couleurs du deck depuis la
+  table `/materials` du `.h5` (id, nom, couleur) ;
+- **Coupes** : filtre **Slice** (plans x-z / y-z propres, à comparer aux
+  `views` PNG) ; **Save Screenshot** pour exporter une vue.
+
 ---
 
 ## 7. Déterminisme et tests golden
