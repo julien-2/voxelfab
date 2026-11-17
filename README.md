@@ -47,6 +47,7 @@ steps, layouts in, 3D structures and virtual metrology out.
     vf demo                          # write + run the demo MOSFET deck
     vf run decks/demo_deck.yaml -o out/   # run any deck
     vf info decks/demo_deck.yaml     # validate + summarize a deck
+    vf xmf out/structure.h5          # ParaView bridge (.xmf, real-nm axes)
     vf bench 256                     # micro-benchmark (16.7M voxels)
 
 Outputs land in the output directory: `structure.h5` (the 3D structure +
@@ -64,7 +65,7 @@ provenance), `mos3d.png` (top view + cross-sections), `report.json`
     ├── metro.py       virtual metrology
     ├── export.py      HDF5 structure (export_h5/load_h5), views, VTK, STL
     ├── layout.py      GDS/OASIS import (extra [layout])
-    └── cli.py         vf run | info | demo | bench
+    └── cli.py         vf run | info | demo | bench | xmf
 
     decks/demo_deck.yaml        shipped example deck (planar MOSFET)
     tests/test_golden.py        golden structure test (byte-exact determinism)

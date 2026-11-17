@@ -4,6 +4,16 @@ Format : versions stables alignées sur `pyproject.toml` (semver). Le hash
 `structure_sha256` du deck de démo (`e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1`)
 garantit la reproductibilité de chaque version.
 
+## Non publié (v0.1.x)
+
+- CLI `vf xmf [FICHIER]` : pont Xdmf (.xmf) écrit à côté d'un
+  `structure.h5` pour visualisation ParaView en nanomètres réels —
+  le `.h5` reste la source unique (référence relative, couple
+  déplaçable) ; `export.write_xmf()` côté API Python ;
+- guide : §6.4 route B simplifiée (`vf xmf`), nouvelle §6.5
+  « Débutants : visualiser une coupe avec matplotlib » (niveaux 0/1/2,
+  pièges d'axes documentés).
+
 ## v0.1.0 — 2026-11-17
 
 Première version stable : **émulation géométrique** (morphologie

@@ -494,6 +494,7 @@ vf run deck.yaml [-o OUTDIR] [--backend cpu]
 vf info deck.yaml
 vf demo [-o OUTDIR]
 vf bench [N]                    # micro-benchmark sur grille N³ (défaut 256)
+vf xmf [FICHIER]                # pont ParaView : structure.h5 -> structure.xmf
 ```
 
 - `vf run` : exécute le deck ; `-o` définit le répertoire des sorties
@@ -502,6 +503,9 @@ vf bench [N]                    # micro-benchmark sur grille N³ (défaut 256)
   déboguer un deck (version, grille, matériaux, étapes, sorties).
 - `vf bench` : chronomètre chaque type d'étape ; sert de test de fumée
   (128 → 2 M voxels, 256 → 16,7 M, 430 → ~80 M).
+- `vf xmf` : écrit le pont Xdmf à côté d'un `structure.h5` pour
+  l'ouvrir dans ParaView en nanomètres réels (§6.4) — défaut
+  `structure.h5`.
 - `--backend` : réservé au backend GPU (v0.2) ; `cpu` est la seule valeur
   aujourd'hui.
 
@@ -585,40 +589,26 @@ voxels, pas en nm).
 #### Route B — pont Xdmf (le `.h5` reste la source unique)
 
 Un petit fichier `.xmf` pointe vers `/grid` ; ParaView lit le HDF5 à
-travers. Attention : Xdmf énumère les dimensions **du plus rapide au plus
-lent** (z, y, x), l'inverse de NumPy. Générateur une fois pour toutes :
+travers. Pas besoin de l'écrire à la main :
 
-```python
-import h5py
-
-with h5py.File("out/structure.h5") as f:
-    nx, ny, nz = f["grid"].shape
-    p = float(f.attrs["pitch_nm"])
-
-xml = f"""<?xml version="1.0" ?>
-<Xdmf Version="2.0">
-  <Domain>
-    <Grid Name="voxelfab">
-      <Topology TopologyType="3DCoRectMesh" NumberOfElements="{nz+1} {ny+1} {nx+1}"/>
-      <Geometry GeometryType="ORIGIN_DXDYDZ">
-        <DataItem Format="XML" Dimensions="3">0 0 0</DataItem>
-        <DataItem Format="XML" Dimensions="3">{p} {p} {p}</DataItem>
-      </Geometry>
-      <Attribute Name="material" AttributeType="Scalar" Center="Cell">
-        <DataItem Format="HDF" Dimensions="{nz} {ny} {nx}"
-                  NumberType="UInt" Precision="1">structure.h5:/grid</DataItem>
-      </Attribute>
-    </Grid>
-  </Domain>
-</Xdmf>
-"""
-open("out/structure.xmf", "w").write(xml)
+```bash
+vf xmf out/structure.h5        # -> out/structure.xmf
 ```
 
-Poser `structure.xmf` **à côté de** `structure.h5`, ouvrir le `.xmf` dans
-ParaView. Avantage sur la route A : les coordonnées sont en
-**nanomètres réels** (le pas vient de `pitch_nm` lu dans les attrs) et le
-`.h5` reste le format canonique.
+Le générateur lit `pitch_nm` et la forme de `/grid` dans le `.h5` et
+écrit le pont à côté ; le `.xmf` référence le `.h5` par son **nom**
+(relatif), donc le couple se déplace ensemble. Principe du pont pour les
+curieux : Xdmf énumère les dimensions **du plus rapide au plus lent**
+(z, y, x), l'inverse de NumPy —
+
+```xml
+<Topology TopologyType="3DCoRectMesh" NumberOfElements="65 61 121"/>  <!-- nz+1 ny+1 nx+1 -->
+<DataItem Format="HDF" Dimensions="64 60 120" ...>structure.h5:/grid</DataItem>
+```
+
+Avantage sur la route A : les coordonnées sont en **nanomètres réels**
+(le pas vient de `pitch_nm` lu dans les attrs) et le `.h5` reste le
+format canonique.
 
 #### Route C — conversion ponctuelle en `.vti` (sans relancer le deck)
 
@@ -645,6 +635,82 @@ img.save("out/structure.vti")
   table `/materials` du `.h5` (id, nom, couleur) ;
 - **Coupes** : filtre **Slice** (plans x-z / y-z propres, à comparer aux
   `views` PNG) ; **Save Screenshot** pour exporter une vue.
+
+### 6.5 Débutants : visualiser une coupe avec matplotlib
+
+Pas besoin de ParaView pour commencer : une coupe 2D colorée par
+matériau suffit à comprendre 90 % d'une structure. Trois niveaux.
+
+**Niveau 0 — zéro code.** La sortie `views` fait déjà tout :
+
+```yaml
+outputs:
+  - {type: views, file: mos3d.png}
+```
+
+`vf run` produit un PNG (vue de dessus + coupes x-z et y-z au milieu).
+
+**Niveau 1 — l'API Python.** Si vous avez rechargé la structure
+(`load_h5`, §3), une coupe x-z à y choisi :
+
+```python
+from voxelfab.export import load_h5, plot_cross_section
+
+g = load_h5("out/structure.h5")
+plot_cross_section(g, y=30, title="coupe à y=30",
+                   filename="coupe.png")
+```
+
+**Niveau 2 — à la main (pour comprendre le format).** Le `.h5` contient
+la grille `(nx, ny, nz)` d'ids et la table des couleurs : une coupe
+s'obtient en fixant un axe, et `matplotlib` affiche le tout en dix
+lignes.
+
+```python
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgb
+from matplotlib.patches import Patch
+
+with h5py.File("out/structure.h5") as f:
+    data = f["grid"][()]          # (nx, ny, nz) — 0 = air
+    mats = f["materials"][()]     # table (id, name, color)
+
+# coupe x-z à y = milieu : .T met z vertical (axes d'image = lignes)
+coupe = data[:, data.shape[1] // 2, :].T
+
+# une couleur RGB par voxel : blanc pour l'air, couleurs du deck sinon
+rgb = np.ones((*coupe.shape, 3))
+patches = [Patch(facecolor="white", edgecolor="0.7", label="air")]
+for row in sorted(mats, key=lambda r: int(r["id"])):
+    name = row["name"].decode() if isinstance(row["name"], bytes) \
+        else str(row["name"])
+    color = str(row["color"])
+    rgb[coupe == int(row["id"])] = to_rgb(color)
+    patches.append(Patch(facecolor=color, label=name))
+
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.imshow(rgb, origin="lower", aspect="equal")
+ax.set_xlabel("x (voxels)")
+ax.set_ylabel("z (voxels)")
+ax.set_title(f"Coupe x-z (y = {data.shape[1] // 2})")
+ax.legend(handles=patches, loc="upper right", fontsize=8)
+fig.tight_layout()
+fig.savefig("coupe.png", dpi=150)
+```
+
+Les trois points qui piègent les débutants :
+
+- `data[x, y, z]` : **x est le premier axe**, z le troisième — une coupe
+  x-z s'écrit `data[:, y, :]` ;
+- `imshow` affiche des lignes en vertical : la transposée `.T` met z
+  vers le haut, et `origin="lower"` met l'origine en bas à gauche ;
+- `aspect="equal"` garde des voxels carrés (sinon imshow étire).
+
+Pour des axes en nanomètres plutôt qu'en voxels, ajoutez `extent` à
+`imshow` : `extent=[0, data.shape[0] * 2.0 / 1000, 0, data.shape[2] * 2.0 / 1000]`
+(µm, avec `pitch = 2.0` nm — lisez `f.attrs["pitch_nm"]`).
 
 ---
 

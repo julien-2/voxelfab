@@ -9,6 +9,7 @@ scikit-image/numpy-stl restent optionnels (extras [view] / stl).
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import numpy as np
 
@@ -90,6 +91,57 @@ def load_h5(filename: str) -> VoxelGrid:
                                  f"par export_h5 ?")
         g.data = np.asarray(f["grid"][()], dtype=np.uint8)
     return g
+
+
+def write_xmf(filename: str = "structure.h5") -> str | None:
+    """Écrit le pont Xdmf (.xmf) pour visualiser `filename` dans ParaView.
+
+    ParaView n'ouvre pas le .h5 directement (HDF5 maison) : le .xmf ne
+    fait que pointer sur /grid — le .h5 reste la source unique, et les
+    coordonnées sont en nanomètres réels (pas = pitch_nm lu dans les
+    attrs). Attention : Xdmf énumère les dimensions du plus rapide au
+    plus lent (z, y, x), l'inverse de NumPy.
+
+    Le .xmf référence le .h5 par son **nom de fichier** (pas le chemin
+    complet) : le couple se déplace ensemble. Retourne le chemin du .xmf
+    écrit, None si h5py est absent ou le fichier est introuvable.
+    """
+    try:
+        import h5py
+    except ImportError:
+        print("  [export] h5py absent : pont Xdmf ignoré "
+              "(uv pip install h5py)")
+        return None
+    h5 = Path(filename)
+    if not h5.exists():
+        print(f"  [export] {filename} introuvable : pont Xdmf ignoré")
+        return None
+    with h5py.File(h5, "r") as f:
+        nx, ny, nz = f["grid"].shape
+        pitch = float(f.attrs["pitch_nm"])
+    xml = f"""<?xml version="1.0" ?>
+<Xdmf Version="2.0">
+  <Domain>
+    <Grid Name="voxelfab">
+      <Topology TopologyType="3DCoRectMesh"
+                NumberOfElements="{nz + 1} {ny + 1} {nx + 1}"/>
+      <Geometry GeometryType="ORIGIN_DXDYDZ">
+        <DataItem Format="XML" Dimensions="3">0 0 0</DataItem>
+        <DataItem Format="XML" Dimensions="3">{pitch} {pitch} {pitch}</DataItem>
+      </Geometry>
+      <Attribute Name="material" AttributeType="Scalar" Center="Cell">
+        <DataItem Format="HDF" Dimensions="{nz} {ny} {nx}"
+                  NumberType="UInt" Precision="1">{h5.name}:/grid</DataItem>
+      </Attribute>
+    </Grid>
+  </Domain>
+</Xdmf>
+"""
+    out = h5.with_suffix(".xmf")
+    out.write_text(xml, encoding="utf-8")
+    print(f"  [export] {out} ({nx}x{ny}x{nz}, pas {pitch} nm — "
+          f"ouvrir le .xmf dans ParaView, à côté du .h5)")
+    return str(out)
 
 
 # --------------------------------------------------------------------------

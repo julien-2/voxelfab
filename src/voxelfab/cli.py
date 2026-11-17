@@ -1,9 +1,10 @@
-"""CLI `vf` : run | info | demo | bench.
+"""CLI `vf` : run | info | demo | bench | xmf.
 
     vf run deck.yaml [-o outdir] [--backend cpu]
     vf info deck.yaml
     vf demo [-o outdir]
     vf bench [n]
+    vf xmf [structure.h5]
 """
 
 from __future__ import annotations
@@ -51,6 +52,11 @@ def cmd_info(args):
     print(f"sorties  : {[o.get('type') for o in deck.get('outputs', [])]}")
 
 
+def cmd_xmf(args):
+    from .export import write_xmf
+    write_xmf(args.file)
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="vf", description="moteur de fabrication virtuelle voxel "
@@ -79,6 +85,13 @@ def main():
                              help="micro-benchmark des étapes (grille n³)")
     p_bench.add_argument("n", nargs="?", type=int, default=256)
     p_bench.set_defaults(fn=lambda a: _bench(a.n))
+
+    p_xmf = sub.add_parser(
+        "xmf", help="pont Xdmf pour visualiser un structure.h5 "
+                    "dans ParaView")
+    p_xmf.add_argument("file", nargs="?", default="structure.h5",
+                       help="fichier .h5 (défaut : structure.h5)")
+    p_xmf.set_defaults(fn=cmd_xmf)
 
     args = ap.parse_args()
     try:
