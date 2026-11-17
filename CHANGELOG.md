@@ -1,0 +1,60 @@
+# Changelog
+
+Format : versions stables alignées sur `pyproject.toml` (semver). Le hash
+`structure_sha256` du deck de démo (`e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1`)
+garantit la reproductibilité de chaque version.
+
+## v0.1.0 — 2026-11-17
+
+Première version stable : **émulation géométrique** (morphologie
+mathématique, pas résolution d'équations) de procédés de fabrication
+virtuelle sur grilles voxel, déterministe, backend CPU.
+
+### Moteur de procédés (NumPy/SciPy/Numba, tout vectorisé)
+
+- `substrate`, `deposit` (conformal euclidien, directionnel PVD, sélectif
+  via `on_materials`), `etch` (directionnel avec matériau d'arrêt `until`,
+  isotrope euclidien), `fill` (tranchées connectées à la surface), `cmp`
+  (planarisation, `stop_on`), `litho` (sucre syntaxique) ;
+- `etch_selective` : sélectivité différentielle par budget de temps
+  (`rates`), directional et isotropic, équivalence garantie avec `etch` ;
+- `grow` : croissance par conversion — oxydation thermique (rapport de
+  volumes Deal-Grove ~44/56), siliciuration (`into`), consommation au
+  prorata des couches minces ;
+- `epitaxy` : épitaxie sélective — mode `seed` (SEG conforme géodésique,
+  bloquée par le masque) et mode `crystal` (facettes {hkl} lentes, plans
+  (100)/(110)/(111), ancres perpendiculaires à la montée, toit en
+  diamant des sources/drain SiGe) ;
+- `etch_crystal` : gravure cristallographique anisotrope KOH/TMAH —
+  miroir de `epitaxy crystal` (plans lents qui protègent), fosse
+  trapézoïdale {111} à 54,7°, fosse auto-limitée (membrane), arrêt sur
+  masque dur.
+
+### Masques et layout
+
+- masques composites : `rect`, `bands`, `invert`, `layer` ;
+- import GDS/OASIS (`gdstk` + `shapely`) : biais de masque `bias_nm`,
+  grille déduite de la bounding box, SREF/AREF aplatis.
+
+### Plateforme
+
+- deck YAML v1 + CLI `vf` (`run`, `info`, `demo`, `bench`) ;
+- sorties : `structure.h5` canonique (grille uint8 chunkée + table
+  matériaux + provenance + `structure_sha256`), `views` PNG, `report`
+  JSON (métrologie virtuelle), `vtk` (ParaView/PyVista), `stl` par
+  matériau ;
+- déterminisme contractuel : tests golden rejouant le deck de démo ;
+- 35 tests, CI verte ; doc : `README.md`, `docs/USER_GUIDE.md`,
+  `docs/ARCHITECTURE.md`.
+
+### Hors périmètre de la v0.1 (documenté)
+
+- backend GPU Taichi avec équivalence voxel-exacte CPU↔GPU (v0.2) ;
+- familles {hkl} au-delà de {100}/{110}/{111} ; sapement latéral sous
+  masque et surplomb FLO (cartes de hauteur).
+
+## v0.1.0-rc — versions de développement
+
+Travail préparatoire poussé sur `main` (nouvelle op = un commit de
+sémantique + kernel + tests + docs) : `etch_selective`, `grow`,
+`epitaxy` (seed puis crystal), `etch_crystal`.
