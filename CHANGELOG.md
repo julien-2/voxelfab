@@ -10,6 +10,9 @@ garantit la reproductibilité de chaque version.
   `structure.h5` pour visualisation ParaView en nanomètres réels —
   le `.h5` reste la source unique (référence relative, couple
   déplaçable) ; `export.write_xmf()` côté API Python ;
+- test `tests/test_xmf.py` : contrat du pont Xdmf vérifié au parseur
+  XML (ordre z-y-x, `Center="Cell"`, HDF UInt précision 1, référence
+  relative, pas en nm réels, fichier absent → None) ;
 - guide : §6.4 route B simplifiée (`vf xmf`), nouvelle §6.5
   « Débutants : visualiser une coupe avec matplotlib » (niveaux 0/1/2,
   pièges d'axes documentés).

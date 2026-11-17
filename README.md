@@ -74,6 +74,7 @@ provenance), `mos3d.png` (top view + cross-sections), `report.json`
     tests/test_grow.py          conversion growth: 44/56 split, silicidation, thin layers
     tests/test_epitaxy.py       selective epitaxy: SEG confinement, {111} faceted mesas
     tests/test_etch_crystal.py  crystallographic anisotropic etch: KOH pits, {111} walls
+    tests/test_xmf.py           ParaView Xdmf bridge (z-y-x order, real-nm axes)
 
 ## Roadmap
 
