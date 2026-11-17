@@ -24,15 +24,16 @@ from voxelfab.deck import DeckError  # noqa: E402
 from voxelfab.ops import get_step  # noqa: E402
 
 
-def _koh_wafer(win="rect", buried=None):
+def _koh_wafer(win="rect", buried=None, bare=False):
     """Si (z < 20) + masque SiO2 (z 20..23) ; fenêtre carrée [12, 20)²
-    (win='rect'), losange |x-16|+|y-16| <= 8 (win='diamond') ou pas de
-    fenêtre (win=None). buried=(z0, z1) : oxyde enfoui dans le Si."""
+    (win='rect'), losange |x-16|+|y-16| <= 8 (win='diamond') ou masque
+    complet non percé (win=None). bare=True : substrat nu sans masque.
+    buried=(z0, z1) : oxyde enfoui dans le Si."""
     g = VoxelGrid(32, 32, 40, pitch=1.0)
     Si = g.add_material("Si", "#4d79ff")
     SiO2 = g.add_material("SiO2", "#c9c9c9")
     g.data[:, :, :20] = Si
-    if win is not None:
+    if not bare:
         g.data[:, :, 20:24] = SiO2
     if buried is not None:
         g.data[:, :, buried[0]:buried[1] + 1] = SiO2
@@ -91,7 +92,7 @@ def test_etch_crystal_diamond_window_trapezoid():
 def test_etch_crystal_bare_wafer_no_edges():
     """Substrat nu : pas de bord -> pas de facette, gravure verticale
     pure de depth voxels (taux de référence {100} = 1.0)."""
-    g, Si, SiO2 = _koh_wafer(None)
+    g, Si, SiO2 = _koh_wafer(None, bare=True)
     get_step("cpu", "etch_crystal")(g, 5, Si)
     col = g.data[5, 5, :]
     assert col[14] == Si and col[15] == 0
@@ -114,8 +115,8 @@ def test_etch_crystal_orientation_110():
 # --------------------------------------------------------------------------
 
 def test_etch_crystal_no_exposure_no_etch():
-    """Matériau jamais exposé à l'air (sous masque complet) : grille
-    inchangée octet pour octet."""
+    """Matériau jamais exposé à l'air (sous masque complet non percé) :
+    grille inchangée octet pour octet."""
     g, Si, SiO2 = _koh_wafer(None)
     before = g.data.copy()
     get_step("cpu", "etch_crystal")(g, 10, Si)
@@ -173,4 +174,4 @@ def test_etch_crystal_deck_end_to_end(tmp_path):
     runner = DeckRunner(deck, outdir=tmp_path)
     runner.run()
     g = runner.g
-    assert g.data[4, 4, 2] == 0 and g.data[4, 4, 1] == g.mat["Si"]
+    assert g.data[4, 4, 2] == 0 and g.data[4, 4, 1] == runner.mat["Si"]
