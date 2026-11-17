@@ -8,7 +8,8 @@ steps, layouts in, 3D structures and virtual metrology out.
 
 - **Voxel process kernel** (NumPy/SciPy, Numba-accelerated): conformal and
   directional deposition, isotropic, directional and selective
-  (rate-differential) etch, conversion growth (thermal oxidation,
+  (rate-differential) etch, crystallographic anisotropic etch (KOH-style
+  {hkl} facets), conversion growth (thermal oxidation,
   silicidation), selective and faceted epitaxy (SEG, crystal facets),
   lithography, CMP, trench fill — all vectorized,
   calibrated for 1–100M-voxel grids.
@@ -71,6 +72,7 @@ provenance), `mos3d.png` (top view + cross-sections), `report.json`
     tests/test_etch_selective.py  rate-differential etch (incl. etch equivalence)
     tests/test_grow.py          conversion growth: 44/56 split, silicidation, thin layers
     tests/test_epitaxy.py       selective epitaxy: SEG confinement, {111} faceted mesas
+    tests/test_etch_crystal.py  crystallographic anisotropic etch: KOH pits, {111} walls
 
 ## Roadmap
 

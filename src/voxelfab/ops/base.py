@@ -122,6 +122,35 @@ nm -> voxels est faite par l'orchestrateur) :
           quasi verticales (n_z <= 0.05) sont ignorées.
         - mask : restreint les colonnes de remplissage.
 
+    etch_crystal(grid, depth_voxels, material, orientation="100",
+                 facet_rates=None, mask=None)
+        Gravure cristallographique anisotrope (KOH, TMAH) : miroir de
+        epitaxy[crystal] — la profondeur gravie par colonne est le
+        minimum entre le terme vertical (famille la plus parallèle au
+        wafer : depth_voxels, c'est la référence de profondeur, les
+        autres taux sont relatifs à elle) et les plans lents partant
+        des bords du matériau exposé (mêmes règles d'ancrage que
+        epitaxy[crystal] : bords perpendiculaires à la montée, voisin
+        hors grille = pas un bord). Un plan plus rapide que le terme
+        vertical ne lie jamais : seules les familles lentes limitent.
+        - facet_rates : défaut KOH typique {'100': 1.0, '110': 1.6,
+          '111': 0.1} — {111} quasi gravure-arrêt, {110} rapide.
+        - seul `material` est retiré, depuis sa surface exposée à l'air,
+          vers le bas ; arrêt au premier voxel qui n'est pas `material`
+          (masque dur, matériau d'arrêt) ; la surface couverte par un
+          autre matériau n'est pas exposée -> protégée.
+        - repère : sur wafer (100), les arêtes de masque alignées aux
+          axes grille sont des <100> cristallographiques -> parois
+          latérales = plans {110} (rapides avec les taux KOH) -> fond
+          plat + facettes {111} aux coins ; la fosse trapézoïdale
+          classique {111} à 54,7° demande des arêtes à 45° (fenêtre en
+          losange, ex. layout GDS).
+        - limites (carte de hauteur, comme epitaxy[crystal]) : pas de
+          sapement latéral sous le masque ; facettes quasi verticales
+          (n_z <= 0.05) ignorées ; familles limitées à
+          {100}/{110}/{111}.
+        - mask : restreint les colonnes gravies.
+
     fill(grid, material, max_z)
         Remplit les volumes d'air connectés à la surface et situés sous
         z <= max_z (surface du wafer avant gravure).

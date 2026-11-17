@@ -390,6 +390,45 @@ Points clés :
   (directional et isotropic) — c'est testé (`tests/test_etch_selective.py`),
   et le futur backend GPU devra le respecter aussi.
 
+#### `etch_crystal` — gravure cristallographique anisotrope (KOH)
+
+```yaml
+# KOH : fosse auto-limitée à parois {111} (fenêtre à arêtes <110>, ex. GDS)
+- {op: etch_crystal, material: Si, depth_nm: 300, orientation: '100'}
+```
+
+Miroir de `epitaxy crystal` : la profondeur gravie par colonne est le
+minimum entre le terme vertical (famille la plus parallèle au wafer) et
+les **plans lents partant des bords du matériau exposé** (mêmes règles
+d'ancrage). Un plan plus rapide que le terme vertical ne lie jamais :
+seules les familles lentes protègent.
+
+| Paramètre | Rôle |
+| --- | --- |
+| `material` | matériau gravé (obligatoire) — un seul ; tous les autres matériaux servent de masque dur |
+| `depth_nm` | profondeur verticale du fond plat (référence = famille la plus parallèle au wafer, taux 1.0) |
+| `orientation` | plan de wafer : `'100'` (défaut), `'110'` ou `'111'` |
+| `facet_rates` | taux relatifs par famille `{hkl}` ; défaut KOH typique `{'100': 1.0, '110': 1.6, '111': 0.1}` — {111} quasi gravure-arrêt, {110} rapide |
+| `mask` | limite les colonnes gravies |
+
+Comportements :
+
+- **fenêtre alignée aux axes sur (100)** : les arêtes de masque y sont
+  des `<100>` cristallographiques → parois latérales = plans {110}
+  (rapides avec les taux KOH) → fond plat + facettes {111} aux coins ;
+- **fenêtre à arêtes à 45°** (losange, via un layout GDS) : les arêtes
+  sont des `<110>` → parois {111} à **54,7°** → la fosse trapézoïdale
+  classique du KOH ; fenêtre étroite → fosse **auto-limitée** en pointe
+  (le terme vertical n'est jamais atteint : c'est le principe de la
+  membrane KOH) ;
+- **arrêt** au premier voxel qui n'est pas `material` (masque dur, oxyde
+  enfoui) ; la surface couverte par un autre matériau n'est pas exposée
+  → protégée.
+
+Limites assumées (carte de hauteur, comme `epitaxy crystal`) : pas de
+sapement latéral sous le masque ; facettes quasi verticales ignorées ;
+familles limitées à {100}/{110}/{111}.
+
 #### `litho` — lithographie + transfert
 
 ```yaml

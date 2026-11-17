@@ -83,6 +83,29 @@ class DeckRunner:
             return ~self._mask(spec["invert"], where)
         raise DeckError(f"masque non compris {where} : {spec!r}")
 
+    def _crystal_step_params(self, step: dict, default_rates: dict):
+        """Validation partagée des étapes cristallographiques (epitaxy
+        crystal, etch_crystal) : orientation + facet_rates."""
+        ori = str(step.get("orientation", "100"))
+        if ori not in ("100", "110", "111"):
+            raise DeckError(f"orientation inconnue : {ori!r} "
+                            "(100, 110 ou 111)")
+        rates = step.get("facet_rates", default_rates)
+        if not isinstance(rates, dict) or not rates:
+            raise DeckError("'facet_rates' doit être un dict "
+                            "non vide {famille: taux}")
+        clean = {}
+        for k, v in rates.items():
+            ks = str(k)
+            if ks not in ("100", "110", "111"):
+                raise DeckError(f"famille de facettes inconnue : "
+                                f"{k!r} (100, 110 ou 111)")
+            if isinstance(v, bool) or \
+                    not isinstance(v, (int, float)) or v <= 0:
+                raise DeckError(f"taux invalide pour {ks} : {v!r}")
+            clean[ks] = float(v)
+        return ori, clean
+
     # --- setup -------------------------------------------------------------
 
     def setup(self):
@@ -226,25 +249,8 @@ class DeckRunner:
                 self._log(f"epitaxy seed {step['material']} {t} vx "
                           f"(graine {step['seed']})")
             elif mode == "crystal":
-                ori = str(step.get("orientation", "100"))
-                if ori not in ("100", "110", "111"):
-                    raise DeckError(f"orientation inconnue : {ori!r} "
-                                    "(100, 110 ou 111)")
-                rates = step.get("facet_rates",
-                                 {"100": 1.0, "110": 0.6, "111": 0.25})
-                if not isinstance(rates, dict) or not rates:
-                    raise DeckError("'facet_rates' doit être un dict "
-                                    "non vide {famille: taux}")
-                clean = {}
-                for k, v in rates.items():
-                    ks = str(k)
-                    if ks not in ("100", "110", "111"):
-                        raise DeckError(f"famille de facettes inconnue : "
-                                        f"{k!r} (100, 110 ou 111)")
-                    if isinstance(v, bool) or \
-                            not isinstance(v, (int, float)) or v <= 0:
-                        raise DeckError(f"taux invalide pour {ks} : {v!r}")
-                    clean[ks] = float(v)
+                ori, clean = self._crystal_step_params(
+                    step, {"100": 1.0, "110": 0.6, "111": 0.25})
                 get_step(self.backend, "epitaxy", "crystal")(
                     g, t, mat, orientation=ori, facet_rates=clean,
                     seed=seed, mask=mask)
@@ -252,6 +258,17 @@ class DeckRunner:
                           f"({ori}, {clean})")
             else:
                 raise DeckError(f"mode epitaxy inconnu : {mode!r}")
+
+        elif op == "etch_crystal":
+            t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
+            mat = self._mid(step["material"])
+            ori, clean = self._crystal_step_params(
+                step, {"100": 1.0, "110": 1.6, "111": 0.1})
+            get_step(self.backend, "etch_crystal")(
+                g, t, mat, orientation=ori, facet_rates=clean,
+                mask=self._mask(step.get("mask"), where))
+            self._log(f"etch_crystal {step['material']} {t} vx "
+                      f"({ori}, {clean})")
 
         elif op == "litho":
             t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))

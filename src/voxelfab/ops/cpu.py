@@ -420,6 +420,75 @@ def _min_pyramid(a: np.ndarray, sx: float, sy: float) -> np.ndarray:
     return _min_scan(_min_scan(a, sx, 0), sy, 1)
 
 
+def _crystal_planes(orientation, facet_rates) -> list:
+    """Plans distincts (|nx|, |ny|, nz) par famille {hkl}, en repère
+    grille : liste de (sx, sy, 1/nz, taux normalisé au maximum).
+    Partagé par epitaxy[crystal] et etch_crystal."""
+    rates = dict(facet_rates)
+    vmax = max(rates.values())
+    Gx, Gy, Gz = _ORIENTATIONS[orientation]
+    planes = []  # (sx, sy, 1/nz, taux)
+    for fam, v in rates.items():
+        seen = set()
+        for n in _FACET_NORMALS[fam]:
+            ng = np.array([np.dot(n, Gx) / np.dot(Gx, Gx),
+                           np.dot(n, Gy) / np.dot(Gy, Gy),
+                           np.dot(n, Gz) / np.dot(Gz, Gz)])
+            ng /= np.linalg.norm(ng)
+            if ng[2] <= 0.05:      # facette quasi verticale : hors carte
+                continue           # de hauteur (documenté)
+            key = (round(abs(ng[0]), 6), round(abs(ng[1]), 6),
+                   round(ng[2], 6))
+            if key in seen:
+                continue
+            seen.add(key)
+            planes.append((key[0] / key[2], key[1] / key[2], 1.0 / key[2],
+                           float(v) / vmax))
+    return planes
+
+
+def _exposed_surface(data: np.ndarray, mid: int):
+    """Surface du matériau `mid` exposée à l'air, par colonne, + bords
+    par axe. Retourne (ztop, surf, edge_x, edge_y) — cf. contrat
+    epitaxy[crystal] : un voisin hors grille n'est pas un bord (le wafer
+    continue) ; un voisin sans surface de `mid` (masque) ou de hauteur
+    différente (>= 1/2 voxel) en est un. Partagé par epitaxy[crystal]
+    et etch_crystal."""
+    nx, ny, nz = data.shape
+    zidx = np.arange(nz, dtype=np.int64)
+    ztop = np.where(data == mid, zidx[None, None, :],
+                    np.int64(-1)).max(axis=2)
+    top_air = np.take_along_axis(
+        data == Materials.AIR, np.minimum(ztop + 1, nz - 1)[..., None],
+        axis=2)[..., 0]
+    surf = (ztop >= 0) & top_air
+    zsr = np.where(surf, ztop.astype(np.float64), np.inf)
+    edge_x = np.zeros((nx, ny), dtype=bool)
+    edge_y = np.zeros((nx, ny), dtype=bool)
+    for axis in (0, 1):
+        for sgn in (-1, 1):
+            nb = zsr.copy()
+            if axis == 0 and sgn == 1:
+                nb[1:, :] = zsr[:-1, :]
+            elif axis == 0:
+                nb[:-1, :] = zsr[1:, :]
+            elif sgn == 1:
+                nb[:, 1:] = zsr[:, :-1]
+            else:
+                nb[:, :-1] = zsr[:, 1:]
+            # np.where évalue np.abs(nb - zsr) partout (inf - inf -> nan,
+            # sélectionné ensuite) : on tait l'avertissement invalide.
+            with np.errstate(invalid="ignore"):
+                diff = np.where(np.isfinite(nb) & np.isfinite(zsr),
+                                np.abs(nb - zsr), np.inf)
+            bad = (~np.isfinite(nb)) | (diff >= 0.5)
+            if axis == 0:
+                edge_x |= surf & bad
+            else:
+                edge_y |= surf & bad
+    return ztop, surf, edge_x, edge_y
+
+
 @register("cpu", "epitaxy", "seed")
 def epitaxy_seed(grid, depth, material, seed, mask=None):
     """SEG conforme : flood géodésique 6-voisin depuis la graine à travers
@@ -454,66 +523,12 @@ def epitaxy_crystal(grid, depth, material, orientation="100",
     data = grid.data
     nx, ny, nz = data.shape
     t = float(depth)
-    rates = dict(facet_rates or {"100": 1.0, "110": 0.6, "111": 0.25})
-    vmax = max(rates.values())
-    Gx, Gy, Gz = _ORIENTATIONS[orientation]
-    # plans distincts (|nx|, |ny|, nz) par famille, en repère grille
-    planes = []  # (sx, sy, 1/nz, taux)
-    for fam, v in rates.items():
-        seen = set()
-        for n in _FACET_NORMALS[fam]:
-            ng = np.array([np.dot(n, Gx) / np.dot(Gx, Gx),
-                           np.dot(n, Gy) / np.dot(Gy, Gy),
-                           np.dot(n, Gz) / np.dot(Gz, Gz)])
-            ng /= np.linalg.norm(ng)
-            if ng[2] <= 0.05:      # facette quasi verticale : hors carte
-                continue           # de hauteur (documenté)
-            key = (round(abs(ng[0]), 6), round(abs(ng[1]), 6),
-                   round(ng[2], 6))
-            if key in seen:
-                continue
-            seen.add(key)
-            planes.append((key[0] / key[2], key[1] / key[2], 1.0 / key[2],
-                           float(v) / vmax))
+    rates = facet_rates or {"100": 1.0, "110": 0.6, "111": 0.25}
+    planes = _crystal_planes(orientation, rates)
     # surface de la graine exposée à l'air, par colonne (top seed voxel)
-    zidx = np.arange(nz, dtype=np.int64)
-    zseed = np.where(data == seed, zidx[None, None, :],
-                     np.int64(-1)).max(axis=2)
-    if not (zseed >= 0).any():
+    zseed, surf, edge_x, edge_y = _exposed_surface(data, seed)
+    if not surf.any():
         return
-    top_air = np.take_along_axis(
-        data == Materials.AIR, np.minimum(zseed + 1, nz - 1)[..., None],
-        axis=2)[..., 0]
-    surf = (zseed >= 0) & top_air
-    # ancres : colonnes de graine exposée au bord (voisin sans surface de
-    # graine, ou de hauteur différente)
-    zsr = np.where(surf, zseed.astype(np.float64), np.inf)
-    # bords de la graine exposée, PAR AXE : un voisin hors grille n'est pas
-    # un bord (le wafer continue) -> on réplique ; un voisin sans surface
-    # de graine ou de hauteur différente (>= 1/2 voxel) en est un.
-    edge_x = np.zeros((nx, ny), dtype=bool)
-    edge_y = np.zeros((nx, ny), dtype=bool)
-    for axis in (0, 1):
-        for sgn in (-1, 1):
-            nb = zsr.copy()
-            if axis == 0 and sgn == 1:
-                nb[1:, :] = zsr[:-1, :]
-            elif axis == 0:
-                nb[:-1, :] = zsr[1:, :]
-            elif sgn == 1:
-                nb[:, 1:] = zsr[:, :-1]
-            else:
-                nb[:, :-1] = zsr[:, 1:]
-            # np.where évalue np.abs(nb - zsr) partout (inf - inf -> nan,
-            # sélectionné ensuite) : on tait l'avertissement invalide.
-            with np.errstate(invalid="ignore"):
-                diff = np.where(np.isfinite(nb) & np.isfinite(zsr),
-                                np.abs(nb - zsr), np.inf)
-            bad = (~np.isfinite(nb)) | (diff >= 0.5)
-            if axis == 0:
-                edge_x |= surf & bad
-            else:
-                edge_y |= surf & bad
     # surface résultante : min(terme vertical, plans de facettes)
     znew = np.full((nx, ny), np.inf)
     for sx, sy, inv_nz, v in planes:
@@ -540,7 +555,7 @@ def epitaxy_crystal(grid, depth, material, orientation="100",
     zfill = np.where(np.isfinite(znew),
                      np.rint(np.minimum(znew, nz - 1)),
                      np.int64(-1)).astype(np.int64)
-    zi = zidx[None, None, :]
+    zi = np.arange(nz, dtype=np.int64)[None, None, :]
     blocked = (data != Materials.AIR) & (zi > zseed[..., None])
     zblock = np.where(blocked, zi, np.int64(nz)).min(axis=2)
     fill = ((data == Materials.AIR) & (zseed >= 0)[..., None]
@@ -550,6 +565,64 @@ def epitaxy_crystal(grid, depth, material, orientation="100",
         fill &= mask[:, :, None]
     if fill.any():
         data[fill] = material
+
+
+@register("cpu", "etch_crystal")
+def etch_crystal(grid, depth, material, orientation="100",
+                 facet_rates=None, mask=None):
+    """Gravure cristallographique anisotrope (KOH, TMAH) — miroir de
+    epitaxy[crystal] : la profondeur gravie par colonne est le minimum
+    entre le terme vertical et les plans lents partant des bords du
+    matériau exposé (même machinerie, cf. contrat ops/base.py). Carte de
+    profondeur, tout vectorisé (min-filtres pyramidaux séparables)."""
+    if depth <= 0:
+        return
+    data = grid.data
+    nx, ny, nz = data.shape
+    t = float(depth)
+    rates = facet_rates or {"100": 1.0, "110": 1.6, "111": 0.1}
+    planes = _crystal_planes(orientation, rates)
+    # référence de profondeur = famille la plus parallèle au wafer
+    # (convention etch_selective : le taux 1.0 définit depth_voxels)
+    vpar = max(v for sx, sy, _, v in planes if sx == 0.0 and sy == 0.0)
+    planes = [(sx, sy, inv_nz, v / vpar) for sx, sy, inv_nz, v in planes]
+    ztop, surf, edge_x, edge_y = _exposed_surface(data, material)
+    if not surf.any():
+        return
+    # profondeur gravie : min(terme vertical, plans lents depuis les
+    # bords) — un plan plus rapide que le terme vertical ne lie jamais
+    dmap = np.full((nx, ny), np.inf)
+    for sx, sy, inv_nz, v in planes:
+        if sx == 0.0 and sy == 0.0:
+            # plan parallèle au wafer : terme vertical par colonne
+            cand = np.where(surf, v * t * inv_nz, np.inf)
+        else:
+            # ancrage sur les bords perpendiculaires à la montée (cf.
+            # epitaxy[crystal]) ; le plan plonge DANS le matériau en
+            # s'éloignant du bord -> profondeur autorisée croissante
+            anch_ok = surf
+            if sx > 0.0:
+                anch_ok = anch_ok & edge_x
+            if sy > 0.0:
+                anch_ok = anch_ok & edge_y
+            anch = np.where(anch_ok, v * t * inv_nz, np.inf)
+            cand = _min_pyramid(anch, sx, sy)
+        dmap = np.minimum(dmap, cand)
+    n = np.where(surf, np.rint(np.minimum(dmap, nz)), 0.0).astype(np.int64)
+    # retrait : `material` depuis sa surface, n voxels vers le bas,
+    # arrêt au premier voxel qui n'est pas `material` (masque dur,
+    # matériau d'arrêt) ; hors surface exposée : rien (protégé)
+    zi = np.arange(nz, dtype=np.int64)
+    nonmat = (data != material) & (zi[None, None, :] <= ztop[..., None])
+    zstop = np.where(nonmat, zi, np.int64(-1)).max(axis=2)
+    zlo = np.maximum(zstop, ztop - n)
+    remove = ((data == material) & (ztop >= 0)[..., None]
+              & (zi[None, None, :] > zlo[..., None])
+              & (zi[None, None, :] <= ztop[..., None]))
+    if mask is not None:
+        remove &= mask[:, :, None]
+    if remove.any():
+        data[remove] = Materials.AIR
 
 
 @register("cpu", "fill")
