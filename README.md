@@ -80,9 +80,9 @@ provenance), `mos3d.png` (top view + cross-sections), `report.json`
 
 ## Roadmap
 
-v0.1 package split + deck DSL + HDF5 + user guide (this) → v0.2 Taichi GPU
-backend (voxel-exact vs CPU) → v0.3 viewer + metrology DSL → v0.4 DOE
-sweeps → v1.0 GUI client.
+v0.1 package split + deck DSL + HDF5 + user guide → **v0.2 Taichi GPU backend
+(voxel-exact vs CPU) — publié (v0.2.0)** → v0.3 viewer + metrology DSL →
+v0.4 DOE sweeps → v1.0 GUI client.
 
 ## License
 

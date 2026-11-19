@@ -4,7 +4,11 @@ Format : versions stables alignées sur `pyproject.toml` (semver). Le hash
 `structure_sha256` du deck de démo (`e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1`)
 garantit la reproductibilité de chaque version.
 
-## Non publié (v0.2)
+## v0.2.0 — 2026-11-19
+
+Publiée le 2026-11-19 : PR #6 mergée dans `main` (merge commit `2dd3a36`),
+tag `v0.2.0`. Le hash du deck de démo reste `e1316a29…` (inchangé, vérifié
+côté CPU **et** GPU).
 
 - **Backend GPU Taichi** (`src/voxelfab/ops/gpu.py`, extra `[gpu]`) :
   toutes les étapes (substrate, deposit conformal/directionnel, etch
