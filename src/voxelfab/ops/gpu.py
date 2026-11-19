@@ -22,6 +22,8 @@ noyaux Taichi doivent être de vrais objets de types (ti.f64, ...), pas des
 chaînes (PEP 563).
 """
 
+import os
+
 import numpy as np
 
 from ..grid import Materials
@@ -974,15 +976,148 @@ if HAS_TAICHI:
             }
 
     _CTX_CACHE: dict = {}
+    _ALLOCATED = 0          # octets VRAM alloués (comptés côté hôte)
+    _BUDGET = None          # budget VRAM (calculé une fois)
+    _FH_CACHE: dict = {}    # (nx, ny) -> hauteur de champ zslab (fixée une fois)
+    _TILE_CACHE: dict = {}  # nz -> (tx, ty) taille de tuile xy (fixée une fois)
 
-    def _ctx(grid) -> _GpuCtx:
-        shape = (grid.nx, grid.ny, grid.nz)
+    # --- budget VRAM : tiling au-delà (cf. ARCHITECTURE.md §5) --------------
+
+    def _vram_free_bytes():
+        """VRAM libre via cuInit + cuMemGetInfo (nvcuda.dll / libcuda.so)."""
+        import ctypes
+        for lib in ("nvcuda.dll", "libcuda.so.1", "libcuda.so"):
+            try:
+                cuda = ctypes.CDLL(lib)
+                cuda.cuInit(0)
+                free = ctypes.c_size_t()
+                total = ctypes.c_size_t()
+                if cuda.cuMemGetInfo(ctypes.byref(free), ctypes.byref(total)) == 0:
+                    return free.value
+            except Exception:
+                continue
+        return None
+
+    def _budget() -> int:
+        """Budget VRAM utilisable : env VOXELFAB_GPU_VRAM_BYTES, sinon 85 %
+        de la VRAM libre mesurée, sinon 4 Go par défaut."""
+        global _BUDGET
+        if _BUDGET is None:
+            env = os.environ.get("VOXELFAB_GPU_VRAM_BYTES")
+            if env:
+                _BUDGET = int(env)
+            else:
+                free = _vram_free_bytes()
+                _BUDGET = int(free * 0.85) if free else 4 * 1024 ** 3
+        return _BUDGET
+
+    def _ctx_bytes(shape) -> int:
+        """Octets VRAM d'un _GpuCtx : 6 tampons u8 3D + champs 2D (~51 o/col)."""
+        nx, ny, nz = shape
+        return 6 * nx * ny * nz + 51 * nx * ny
+
+    def _fits(shape) -> bool:
+        """True si un ctx complet de cette shape tient dans le budget VRAM.
+        VOXELFAB_FORCE_TILED=1 force le mode tuilé (tests)."""
+        if os.environ.get("VOXELFAB_FORCE_TILED"):
+            return False
+        return _ALLOCATED + _ctx_bytes(shape) <= _budget()
+
+    def _ctx(shape) -> _GpuCtx:
+        global _ALLOCATED
         ctx = _CTX_CACHE.get(shape)
         if ctx is None:
             _ensure_init()
+            _ALLOCATED += _ctx_bytes(shape)
             ctx = _GpuCtx(shape)
             _CTX_CACHE[shape] = ctx
         return ctx
+
+    class _View:
+        """Vue tuile d'une grille : seules les dims sont lues par les ops."""
+        def __init__(self, nx, ny, nz):
+            self.nx, self.ny, self.nz = nx, ny, nz
+            self.data = None
+            self._gpu_resident = False
+
+    def _tile(mode, halo=None):
+        """Marque une étape comme tuilable : mode 'zslab' (stencil, halo exact
+        = rayon) ou 'xy' (colonnes indépendantes, pas de halo, z complet).
+        halo(*args) -> rayon du stencil pour les ops zslab."""
+        def deco(w):
+            w._tile = mode
+            w._halo = halo
+            return w
+        return deco
+
+    def _run_tiled(fn, wrapper, grid, args, kwargs, mode):
+        """Exécution tuilée d'une étape, la grille restant côté hôte (grid.data
+        = backing store). Halo exact pour les stencils : un voxel à distance
+        > r hors de la tuile ne peut pas influencer l'intérieur."""
+        nx, ny, nz = grid.nx, grid.ny, grid.nz
+        if mode == "zslab":
+            r = wrapper._halo(*args, **kwargs)
+            # hors grille : border_value du CPU (dilate=0, erode=1=solide)
+            pad = 1 if fn.__name__ in ("etch_isotropic",
+                                       "etch_selective_isotropic") else 0
+            # hauteur de champ calculée UNE FOIS par (nx, ny) : sinon chaque op
+            # aurait sa propre shape de ctx -> recompile de tous les noyaux
+            # (les noyaux en closure sont compilés par instance de ctx).
+            if (nx, ny) not in _FH_CACHE:
+                per_z = 6 * nx * ny + 51 * nx * ny
+                _FH_CACHE[(nx, ny)] = min(nz, max(1, int(_budget() // per_z)))
+            fh = _FH_CACHE[(nx, ny)]
+            if 2 * r + 1 > fh:                  # halo seul dépasse : shape dédiée
+                fh = min(nz, 2 * r + 1)
+            h = max(1, fh - 2 * r)
+            sctx = _ctx((nx, ny, fh))
+            # snapshot d'entrée : les halos des tuiles doivent être lus dans
+            # l'état AVANT l'étape (sinon les tuiles déjà écrites contaminent
+            # le halo des suivantes -> double dépôt/érosion aux frontières)
+            src = grid.data.copy() if r > 0 else grid.data
+            for z0 in range(0, nz, h):
+                z1 = min(z0 + h, nz)
+                buf = np.full((nx, ny, fh), pad, np.uint8)
+                lo, hi = max(0, z0 - r), min(nz, z1 + r)
+                buf[:, :, r + lo - z0: r + hi - z0] = src[:, :, lo:hi]
+                sctx.d.from_numpy(buf)
+                a = args
+                if fn.__name__ == "substrate" and len(args) >= 2:
+                    a = (args[0], args[1] - z0 + r)   # seuil global -> local
+                    if a[1] <= 0:
+                        continue
+                fn(sctx, _View(nx, ny, z1 - z0), *a, **kwargs)
+                out = sctx.d.to_numpy()
+                grid.data[:, :, z0:z1] = out[:, :, r: r + (z1 - z0)]
+            return None
+        # mode "xy" : tuiles (x, y) à z complet — colonnes indépendantes
+        # taille de tuile calculée UNE FOIS par nz (même raison que zslab)
+        if nz not in _TILE_CACHE:
+            per_col = 6 * nz + 51
+            t = max(1, int((_budget() / per_col) ** 0.5))
+            _TILE_CACHE[nz] = (min(nx, t), min(ny, t))
+        tx, ty = _TILE_CACHE[nz]
+        tctx = _ctx((tx, ty, nz))
+        total = 0
+        for x0 in range(0, nx, tx):
+            for y0 in range(0, ny, ty):
+                x1, y1 = min(x0 + tx, nx), min(y0 + ty, ny)
+                w, h = x1 - x0, y1 - y0
+                buf = np.zeros((tx, ty, nz), np.uint8)
+                buf[:w, :h, :] = grid.data[x0:x1, y0:y1, :]
+                tctx.d.from_numpy(buf)
+                kw = dict(kwargs)
+                m = kw.get("mask")
+                if m is not None:
+                    mt = np.zeros((tx, ty), bool)
+                    mt[:w, :h] = m[x0:x1, y0:y1]
+                    kw["mask"] = mt
+                r = fn(tctx, _View(tx, ty, nz), *args, **kw)
+                if fn.__name__ == "cmp":
+                    total += r
+                out = tctx.d.to_numpy()
+                grid.data[x0:x1, y0:y1, :] = out[:w, :h, :]
+        return total if fn.__name__ == "cmp" else None
 
     def _morph(ctx, r: int, erode: bool):
         """w2 = morphisme de w1 par la boule de rayon r, exactement comme le
@@ -1004,55 +1139,82 @@ if HAS_TAICHI:
         ctx.k["copy51"]()                       # restaure w1
 
     def _gpu_op(fn):
-        """Décorateur : sync hôte->device, exécute, sync device->hôte.
+        """Décorateur : dispatch selon la taille de grille.
 
-        En mode device-résident (bind_resident pose grid._gpu_resident),
-        les syncs sont sautés : la grille reste dans le ti.field entre les
-        étapes et un seul D2H final (release_resident) remplit grid.data."""
+        - grille qui tient en VRAM : ctx complet. En mode device-résident
+          (bind_resident pose grid._gpu_resident), les syncs hôte↔device sont
+          sautés entre les étapes (un seul D2H final via release_resident) ;
+          sinon sync par étape. Dans les deux cas ti.sync()/to_numpy assurent
+          la fin réelle de l'étape (lancements Taichi asynchrones).
+        - grille trop grosse (hors budget VRAM) : mode tuilé avec halos exacts
+          (_run_tiled), grid.data reste le backing store côté hôte. Les étapes
+          non tuilables (propagation globale : grow, epitaxy seed/crystal,
+          etch_crystal, fill) lèvent une erreur claire."""
         def wrapper(grid, *args, **kwargs):
-            ctx = _ctx(grid)
+            shape = (grid.nx, grid.ny, grid.nz)
             resident = getattr(grid, "_gpu_resident", False)
-            if not resident:
-                ctx.d.from_numpy(grid.data)
-            r = fn(ctx, grid, *args, **kwargs)
-            if resident:
-                ti.sync()   # lancements Taichi asynchrones : on attend la fin
-                            # réelle de l'étape (chrono par étape honnête)
-            else:
-                grid.data = ctx.d.to_numpy()
-            return r
+            if resident or _fits(shape):
+                ctx = _ctx(shape)
+                if not resident:
+                    ctx.d.from_numpy(grid.data)
+                r = fn(ctx, grid, *args, **kwargs)
+                if resident:
+                    ti.sync()   # lancements Taichi asynchrones : on attend la
+                                # fin réelle de l'étape (chrono honnête)
+                else:
+                    grid.data = ctx.d.to_numpy()
+                return r
+            mode = getattr(wrapper, "_tile", None)
+            if mode is None:
+                raise RuntimeError(
+                    f"op {fn.__name__!r} non tuilable : la grille {shape} = "
+                    f"{shape[0] * shape[1] * shape[2] / 1e6:.0f} M vx dépasse "
+                    f"le budget VRAM (~{_budget() / 2**30:.1f} Go) et cette op "
+                    "a besoin de la grille entière sur le device (propagation "
+                    "globale).")
+            return _run_tiled(fn, wrapper, grid, args, kwargs, mode)
         wrapper.__name__ = fn.__name__
         wrapper.__doc__ = fn.__doc__
         return wrapper
 
     def bind_resident(grid):
-        """Mode device-résident : copie grid.data sur le device UNE fois ;
-        les étapes suivantes chaînent directement sur le device (supprime
-        ~2×N octets de transfert PCIe par étape)."""
+        """Mode device-résident si la grille tient en VRAM : copie grid.data
+        sur le device UNE fois ; les étapes chaînent sur le device (supprime
+        ~2×N octets de PCIe par étape). Sinon : mode tuilé (grid.data reste
+        côté hôte, chaque étape traite des tuiles avec halos exacts)."""
         if not HAS_TAICHI:
             raise RuntimeError("bind_resident : taichi non installé "
                                "(extra [gpu])")
-        ctx = _ctx(grid)
-        ctx.d.from_numpy(grid.data)
-        grid._gpu_resident = True
+        shape = (grid.nx, grid.ny, grid.nz)
+        if _fits(shape):
+            ctx = _ctx(shape)
+            ctx.d.from_numpy(grid.data)
+            grid._gpu_resident = True
+        else:
+            grid._gpu_resident = False
+            grid._gpu_tiled = True
 
     def release_resident(grid):
         """Termine le mode device-résident : unique D2H, grid.data à jour
-        (à appeler avant toute lecture hôte : exports, métrologie, vues)."""
-        ctx = _ctx(grid)
-        grid.data = ctx.d.to_numpy()
-        grid._gpu_resident = False
+        (à appeler avant toute lecture hôte : exports, métrologie, vues).
+        En mode tuilé, grid.data est déjà à jour côté hôte : no-op."""
+        if getattr(grid, "_gpu_resident", False):
+            ctx = _ctx((grid.nx, grid.ny, grid.nz))
+            grid.data = ctx.d.to_numpy()
+            grid._gpu_resident = False
 
     # ----------------------------------------------------------------------
     # Étapes enregistrées (unités : VOXELS, mêmes signatures que cpu.py)
     # ----------------------------------------------------------------------
 
     @register("gpu", "substrate")
+    @_tile("zslab", lambda material, t: 0)
     @_gpu_op
     def substrate(ctx, grid, material, t):
         ctx.k["substrate"](t, material)
 
     @register("gpu", "deposit", "conformal")
+    @_tile("zslab", lambda material, t, on_materials=None: t)
     @_gpu_op
     def deposit_conformal(ctx, grid, material, t, on_materials=None):
         if t == 0:
@@ -1062,6 +1224,7 @@ if HAS_TAICHI:
         ctx.k["conformal_set"](material)
 
     @register("gpu", "deposit", "directional")
+    @_tile("xy")
     @_gpu_op
     def deposit_directional(ctx, grid, material, t, on_materials=None):
         if t == 0:
@@ -1071,6 +1234,8 @@ if HAS_TAICHI:
         ctx.k["dep_dir"](t, material, lut)
 
     @register("gpu", "etch", "isotropic")
+    @_tile("zslab",
+           lambda t, materials=None, until_material=None, mask=None: t)
     @_gpu_op
     def etch_isotropic(ctx, grid, t, materials=None, until_material=None,
                        mask=None):
@@ -1082,6 +1247,7 @@ if HAS_TAICHI:
                                 _m2(mask, grid.nx, grid.ny))
 
     @register("gpu", "etch", "directional")
+    @_tile("xy")
     @_gpu_op
     def etch_directional(ctx, grid, t, materials=None, until_material=None,
                          mask=None):
@@ -1093,6 +1259,7 @@ if HAS_TAICHI:
         ctx.k["etch_dir"](t, stop, open_mask, allowed)
 
     @register("gpu", "etch_selective", "directional")
+    @_tile("xy")
     @_gpu_op
     def etch_selective_directional(ctx, grid, depth, rates,
                                    until_material=None, mask=None):
@@ -1104,6 +1271,9 @@ if HAS_TAICHI:
                               np.ascontiguousarray(_rates_lut(rates)))
 
     @register("gpu", "etch_selective", "isotropic")
+    @_tile("zslab",
+           lambda depth, rates, until_material=None, mask=None:
+           max(int(round(depth * float(v))) for v in rates.values()))
     @_gpu_op
     def etch_selective_isotropic(ctx, grid, depth, rates,
                                  until_material=None, mask=None):
@@ -1235,6 +1405,7 @@ if HAS_TAICHI:
         ctx.k["fill_set"](material, max_z)
 
     @register("gpu", "cmp")
+    @_tile("xy")
     @_gpu_op
     def cmp(ctx, grid, target_z_voxels, stop_on=None):
         ctx.k["clear_flag"]()

@@ -44,10 +44,15 @@ def _bench_one(n: int, backend: str) -> dict:
     cmp_step = get_step(backend, "cmp")
     substrate(g, SiO2, n // 2)
     resident = backend != "cpu"
+    if backend == "cpu":
+        mode_label = "cpu"
+    else:
+        from .ops.gpu import _fits
+        mode_label = ("device-résident" if _fits((n, n, n))
+                      else "tuilé (hors VRAM)")
     print(f"\n=== bench {g.nx}x{g.ny}x{g.nz} = "
           f"{g.nx * g.ny * g.nz / 1e6:.1f} M voxels "
-          f"(backend: {backend}, numba: {HAS_NUMBA}, "
-          f"{'mode device-résident' if resident else 'sync par étape'}) ===")
+          f"(backend: {backend}, numba: {HAS_NUMBA}, mode: {mode_label}) ===")
 
     mask = np.zeros((g.nx, g.ny), bool)
     mask[::4, :] = True

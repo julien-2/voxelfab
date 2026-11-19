@@ -185,6 +185,40 @@ def test_resident_mode_matches_per_op_mode():
     assert g_cpu.data.tobytes() == g_res.data.tobytes()
 
 
+def test_tiled_mode_matches_cpu(monkeypatch):
+    """Mode tuilé (grille hors VRAM, halos exacts) == CPU, octet pour octet.
+    Budget VRAM minuscule + VOXELFAB_FORCE_TILED=1 -> beaucoup de tuiles
+    (zslab avec halo pour les stencils, tuiles xy pour les colonnes)."""
+    from voxelfab.ops import gpu as gpu_mod
+    monkeypatch.setenv("VOXELFAB_FORCE_TILED", "1")
+    monkeypatch.setenv("VOXELFAB_GPU_VRAM_BYTES", str(60 * 1024))
+    gpu_mod._BUDGET = None          # recalculé avec l'env du test
+    _, m = _build()
+    seq = [
+        ("substrate", None, (2, 9), {}),
+        ("deposit", "conformal", (2, 5), {}),          # boule r=5 <= ... r>4
+        ("deposit", "conformal", (3, 9), {}),          # croix itérée
+        ("deposit", "directional", (1, 6), {"on_materials": (1,)}),
+        ("etch", "isotropic", (3,), {"materials": (2,), "mask": _mask_rect()}),
+        ("etch", "isotropic", (6,), {}),               # érosion r=6
+        ("etch", "directional", (8,), {"until_material": 1,
+                                       "mask": _mask_rect()}),
+        ("etch_selective", "directional", (6,),
+         {"rates": {m["SiO2"]: 2.0, m["Si"]: 0.5}}),
+        ("etch_selective", "isotropic", (5,),
+         {"rates": {m["SiO2"]: 2.0, m["Si"]: 0.5}, "mask": _mask_rect()}),
+        ("cmp", None, (20,), {"stop_on": 1}),
+    ]
+    g_cpu, _ = _build()
+    g_tiled, _ = _build()
+    for op, mode, args, kw in seq:
+        get_step("cpu", op, mode)(g_cpu, *args, **kw)
+        get_step("gpu", op, mode)(g_tiled, *args, **kw)   # tuilé (env)
+    assert g_cpu.data.tobytes() == g_tiled.data.tobytes(), \
+        "mode tuilé != CPU"
+    gpu_mod._BUDGET = None          # restore pour les autres tests
+
+
 def test_demo_deck_identical_cpu_gpu(tmp_path):
     """Deck de démo complet (17 étapes) : structure_sha256 identique."""
     deck = yaml.safe_load(DEMO_DECK)
