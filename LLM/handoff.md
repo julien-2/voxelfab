@@ -33,23 +33,35 @@ sur ce PC** (GTX 1660) :
 - `vf demo --backend cpu` vs `--backend gpu` → `structure_sha256` identique
   **et égal au golden** commité : `e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1` ;
   grilles `structure.h5` byte-identiques entre backends.
-- Perf mesurées sur ce PC (voir §3), noyaux Taichi chauds :
+- Perf mesurées sur ce PC (voir §3), **noyaux Taichi chauds** (warm-up JIT
+  exclu), `vf bench n --backend all`, 2026-11-19 — accélération × = CPU/GPU :
 
-| étape | 256³ (16,8 M vx) | 464³ (100 M vx) | 640³ (262 M vx) |
-|---|---|---|---|
-| deposit conformal t=5 | ×7–8 | ×7,4 | ×7,2 |
-| deposit conformal t=20 | ×7–8 | ×6,6 | ×5,4 |
-| deposit directional t=10 | ×4 | ×3,7 | ×3,6 |
-| etch isotropic t=5 | ×6,7 | ×6,7 | ×6,6 |
-| etch isotropic t=20 | ×5 | ×4,9 | ×4,2 |
-| etch directional t=30 | ×13 | ×2,2 | ×1,0 |
-| cmp | ×3 | ×2,5 | ×2,7 |
+| étape | 128³ (2,1 M vx) | 256³ (16,8 M vx) | 464³ (100 M vx) | 640³ (262 M vx) |
+|---|---|---|---|---|
+| deposit conformal t=5 | ×4,6 | ×7,8 | ×7,9 | ×7,2 |
+| deposit conformal t=20 | ×3,5 | ×8,0 | ×6,6 | ×5,4 |
+| deposit directional t=10 | ×2,3 | ×4,1 | ×4,2 | ×3,6 |
+| etch isotropic t=5 | ×4,5 | ×5,8 | ×7,2 | ×6,6 |
+| etch isotropic t=20 | ×3,4 | ×4,8 | ×5,0 | ×4,2 |
+| etch directional t=30 | ×61,2 | ×13,3 | ×2,3 | ×1,0 |
+| cmp | ×2,2 | ×2,6 | ×2,7 | ×2,7 |
+| height_map (hôte des 2 côtés) | ×1,0 | ×1,0 | ×1,0 | ×1,1 |
 
-Lecture : le GPU gagne sur **toutes** les étapes ; le cap « 10–50× à 10⁸ vx »
-de la roadmap n'est pas atteint sur une GTX 1660 (carte milieu de gamme,
-192 Go/s) — on mesure ×2,2–×7,4 à 464³. Deux overheads mesurés : JIT Taichi
-one-shot (~0,3 s/noyau, par shape de grille et par processus) et le transfert
-PCIe hôte↔device à chaque étape (~2×N octets, ~40 ms à 100 M vx).
+Temps absolus (ms, CPU / GPU) à 464³ = 100 M vx : conformal t=5 → 984/124,
+conformal t=20 → 1217/183, directional t=10 → 474/113, iso t=5 → 1017/141,
+iso t=20 → 1212/242, dir t=30 → 254/110, cmp → 401/146, height_map → 116/112.
+
+Deck démo complet `vf demo` (120×60×64 = 0,46 M vx, 17 étapes, process complet,
+meilleur de 3 runs) : wall-clock **CPU 3,18 s vs GPU 4,61 s** ; somme des étapes
+0,38 s (CPU) vs 1,86 s (GPU, JIT ~1,3 s + transferts PCIe inclus). Hash identique
+des deux côtés (`e1316a29…` = golden).
+
+Lecture : à partir de ~2 M de voxels le GPU gagne sur **toutes** les étapes
+(×2,2–×13,3 à 256³, ×2,3–×7,9 à 464³). En dessous (~0,5 M vx), le GPU perd en
+wall-clock à cause du JIT one-shot et du transfert PCIe par étape. Le cap
+« 10–50× à 10⁸ vx » de la roadmap n'est pas atteint sur une GTX 1660 (192 Go/s)
+: on mesure ×2,3–×7,9 à 100 M vx. Leviers : mode device-résident pendant tout
+un run (supprime ~2×N octets de PCIe par étape), GPU plus récent.
 
 ## 3. Environnement de référence (PC de test, 2026-11-19)
 
