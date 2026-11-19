@@ -37,6 +37,7 @@ steps, layouts in, 3D structures and virtual metrology out.
 ## Install
 
     uv pip install .                 # core (numpy, scipy, matplotlib, pyyaml, h5py)
+    uv pip install ".[gpu]"          # + Taichi GPU backend (v0.2, voxel-exact vs CPU)
     uv pip install ".[layout]"       # + GDS/OASIS import (gdstk, shapely)
     uv pip install ".[view]"         # + VTK export (pyvista)
     uv pip install ".[bench]"        # + Numba acceleration (recommended)
@@ -45,10 +46,10 @@ steps, layouts in, 3D structures and virtual metrology out.
 ## Quickstart
 
     vf demo                          # write + run the demo MOSFET deck
-    vf run decks/demo_deck.yaml -o out/   # run any deck
+    vf run decks/demo_deck.yaml -o out/ [--backend cpu|gpu]   # run any deck
     vf info decks/demo_deck.yaml     # validate + summarize a deck
     vf xmf out/structure.h5          # ParaView bridge (.xmf, real-nm axes)
-    vf bench 256                     # micro-benchmark (16.7M voxels)
+    vf bench 256 [--backend all]     # micro-benchmark (16.7M voxels); all = cpu vs gpu
 
 Outputs land in the output directory: `structure.h5` (the 3D structure +
 provenance), `mos3d.png` (top view + cross-sections), `report.json`
@@ -59,7 +60,7 @@ provenance), `mos3d.png` (top view + cross-sections), `report.json`
     src/voxelfab/
     ├── grid.py        VoxelGrid, materials registry, height map
     ├── masks.py       geometric lithography masks
-    ├── ops/           step registry + REFERENCE SEMANTICS (base.py), cpu.py
+    ├── ops/           step registry + REFERENCE SEMANTICS (base.py), cpu.py, gpu.py (Taichi)
     ├── deck.py        YAML deck loading, demo deck
     ├── run.py         orchestrator: flow execution, outputs, provenance
     ├── metro.py       virtual metrology
@@ -75,6 +76,7 @@ provenance), `mos3d.png` (top view + cross-sections), `report.json`
     tests/test_epitaxy.py       selective epitaxy: SEG confinement, {111} faceted mesas
     tests/test_etch_crystal.py  crystallographic anisotropic etch: KOH pits, {111} walls
     tests/test_xmf.py           ParaView Xdmf bridge (z-y-x order, real-nm axes)
+    tests/test_equiv_gpu.py     CPU↔GPU voxel-exact equivalence (skip si pas de [gpu])
 
 ## Roadmap
 

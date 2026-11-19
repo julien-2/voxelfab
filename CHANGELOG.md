@@ -4,6 +4,28 @@ Format : versions stables alignées sur `pyproject.toml` (semver). Le hash
 `structure_sha256` du deck de démo (`e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1`)
 garantit la reproductibilité de chaque version.
 
+## Non publié (v0.2)
+
+- **Backend GPU Taichi** (`src/voxelfab/ops/gpu.py`, extra `[gpu]`) :
+  toutes les étapes (substrate, deposit conformal/directionnel, etch
+  isotrope/directionnel, etch_selective, grow, epitaxy seed/crystal,
+  etch_crystal, fill, cmp), **voxel-exact vs CPU** — même `structure_sha256`
+  (vérifié : tests d'équivalence `tests/test_equiv_gpu.py`, 14 tests, +
+  deck de démo rejoué sur les deux backends, hash identique au golden
+  `e1316a29…`). Noyaux Taichi par shape de grille (closures sur champs
+  `ti.field`), déterminisme : réductions min/max + atomics entiers,
+  arithmétique f64 dans le même ordre que NumPy. `r > 4` : croix 6-voisine
+  itérée (comme `binary_dilation(iterations=r)` CPU), pas de boucle sur
+  toute la boule L1.
+- `vf run/demo --backend gpu` ; `vf bench [n] --backend all` imprime le
+  comparatif cpu vs gpu (warm-up JIT Taichi non chronométré côté GPU).
+- Mesuré sur GTX 1660 (CUDA) vs CPU Numba 4 cœurs, noyaux chauds :
+  256³ (16,8 M vx) ×2,8–×13,7 ; 464³ (100 M vx) ×2,2–×7,4 ;
+  640³ (262 M vx) ×1,0–×7,2 selon l'étape (les morphismes larges et la
+  gravure directionnelle gagnent le plus ; le transfert PCIe hôte↔device
+  par étape ~2×N octets et le JIT Taichi (~0,3 s/noyau, une fois par shape
+  et par processus) pénalisent les petites grilles).
+
 ## Non publié (v0.1.x)
 
 - CLI `vf xmf [FICHIER]` : pont Xdmf (.xmf) écrit à côté d'un

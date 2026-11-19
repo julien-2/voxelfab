@@ -18,9 +18,9 @@ from .ops import available_backends
 from .run import DeckRunner, run_deck
 
 
-def _bench(n: int):
+def _bench(n: int, backend: str):
     from .bench import bench
-    bench(n)
+    bench(n, backend)
 
 
 def cmd_run(args):
@@ -84,7 +84,12 @@ def main():
     p_bench = sub.add_parser("bench",
                              help="micro-benchmark des étapes (grille n³)")
     p_bench.add_argument("n", nargs="?", type=int, default=256)
-    p_bench.set_defaults(fn=lambda a: _bench(a.n))
+    _backends = available_backends()
+    p_bench.add_argument("--backend",
+                         default="all" if "gpu" in _backends else "cpu",
+                         choices=_backends + ["all"],
+                         help="backend à benchmarker ('all' = comparatif)")
+    p_bench.set_defaults(fn=lambda a: _bench(a.n, a.backend))
 
     p_xmf = sub.add_parser(
         "xmf", help="pont Xdmf pour visualiser un structure.h5 "
