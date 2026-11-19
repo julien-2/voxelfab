@@ -4,7 +4,10 @@ Format : versions stables alignées sur `pyproject.toml` (semver). Le hash
 `structure_sha256` du deck de démo (`e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1`)
 garantit la reproductibilité de chaque version.
 
-## Non publié (v0.2.x)
+## v0.2.2 — 2026-11-19
+
+Publiée le 2026-11-19 : PR #7 mergée dans `main` (merge commit `767bcd6`),
+tag `v0.2.2`. Hash du deck de démo inchangé (`e1316a29…`, CPU et GPU).
 
 - **Tiling + halos au-delà de la VRAM** (cf. ARCHITECTURE.md §5, objectif 10⁹
   voxels) dans `ops/gpu.py` : budget VRAM auto-détecté (`cuInit` +

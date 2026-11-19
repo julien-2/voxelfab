@@ -55,7 +55,7 @@ def test_h5_provenance_and_hash(tmp_path):
 
     with h5py.File(tmp_path / "structure.h5", "r") as f:
         assert f.attrs["structure_sha256"] == expected_sha
-        assert f.attrs["prov_voxelfab_version"] == "0.2.1"
+        assert f.attrs["prov_voxelfab_version"] == "0.2.2"
         assert f.attrs["prov_backend"] == "cpu"
         assert list(f.attrs["prov_grid"]) == \
             [runner.g.nx, runner.g.ny, runner.g.nz]
