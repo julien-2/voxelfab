@@ -4,6 +4,43 @@ Format : versions stables alignées sur `pyproject.toml` (semver). Le hash
 `structure_sha256` du deck de démo (`e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1`)
 garantit la reproductibilité de chaque version.
 
+## Non publié (v0.2.x)
+
+- **Tiling + halos au-delà de la VRAM** (cf. ARCHITECTURE.md §5, objectif 10⁹
+  voxels) dans `ops/gpu.py` : budget VRAM auto-détecté (`cuInit` +
+  `cuMemGetInfo`, env `VOXELFAB_GPU_VRAM_BYTES`, `VOXELFAB_FORCE_TILED=1`
+  pour forcer). Si la grille tient : mode device-résident inchangé. Sinon :
+  exécution tuilée, `grid.data` reste le backing store hôte —
+  - ops « stencil » (substrate, deposit conformal, etch isotropic,
+    etch_selective isotropic) : **tuiles z** avec halo exact = rayon r
+    (hors grille : border_value CPU, dilate=0/erode=1) ; halos lus dans un
+    **snapshot d'entrée** (sinon les tuiles déjà écrites contaminent le halo
+    des suivantes) ;
+  - ops « colonne » (deposit/etch directionnels, etch_selective dir, cmp) :
+    **tuiles (x, y) à z complet, sans halo** (colonnes indépendantes), masque
+    découpé par tuile ;
+  - propagation globale (grow, epitaxy seed/crystal, etch_crystal, fill) :
+    erreur claire en mode tuilé (à tuiler plus tard : itération à point fixe).
+  - tailles de tuiles fixées une fois par (nx, ny)/nz (caches `_FH_CACHE` /
+    `_TILE_CACHE`) : sinon chaque op aurait sa propre shape de ctx et
+    recompilerait tous les noyaux (les noyaux en closure sont compilés par
+    instance de ctx) — cause d'un hang à 10⁹ avant ce fix.
+  - `vf bench 1000 --backend all` fonctionne à **10⁹ vx** (GTX 1660, 6 Go,
+    2026-11-19), mode tuilé auto (hors VRAM) — ms CPU / GPU, × = CPU/GPU :
+    conformal t=5 : 9213/2714 ×3,4 ; t=20 : 10348/5693 ×1,8 ;
+    dir t=10 : 4286/4276 ×1,0 ; iso t=5 : 9234/2854 ×3,2 ;
+    iso t=20 : 10440/6566 ×1,6 ; etch dir t=30 : 312/3261 ×0,1 ;
+    cmp : 4066/5587 ×0,7 ; height_map : 1102/985 ×1,1.
+    Lecture : le tiling rend 10⁹ possible ; le GPU gagne sur les stencils
+    (calcul dense), mais les ops « colonne » (etch dir, cmp) paient 2×N
+    octets de PCIe par étape côté GPU, ce que le CPU (déjà en RAM) ne paie
+    pas → parité à légèrement perdant à cette échelle sur cette carte.
+  - Test `test_tiled_mode_matches_cpu` : octets identiques au CPU en mode
+    tuilé forcé (budget VRAM minuscule). 53 tests passent.
+- Coût connu en mode tuilé : ~1 compile de noyaux par shape de tuile (2 shapes
+  typiques à 10⁹, ~15 noyaux) + copie snapshot hôte (N octets, stencils
+  uniquement) + H2D/D2H (2×N) par étape.
+
 ## v0.2.1 — 2026-11-19
 
 Tag `v0.2.1` sur `main` (`94a443c`). Hash du deck de démo inchangé

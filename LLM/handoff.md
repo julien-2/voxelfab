@@ -160,8 +160,30 @@ runtime CUDA). Sans GPU, `ti.init` fallback sur `ti.cpu` dans `ops/gpu.py`
    roadmap est atteinte à 10⁸ vx. Test : `test_resident_mode_matches_per_op_mode`
    (octets identiques au mode par-op et au CPU). Bench : `vf bench` tourne en
    mode résident côté GPU.
-3. Bench nightly (10⁷/10⁸ vx) comme prévu au quality gate §8 d'ARCHITECTURE.md.
-4. Optionnel : `vf run --backend auto` (GPU si taichi présent, sinon CPU),
+3. ~~Tiling + halos pour viser 10⁹ vx~~ **implémenté le 2026-11-19** dans
+   `ops/gpu.py` : budget VRAM auto (`cuInit`+`cuMemGetInfo`, env
+   `VOXELFAB_GPU_VRAM_BYTES`, `VOXELFAB_FORCE_TILED=1` pour forcer). Grille qui
+   tient → device-résident ; sinon tuilé, `grid.data` = backing store hôte :
+   - stencils (substrate, deposit conformal, etch iso, etch_selective iso) :
+     **tuiles z + halo exact = r**, hors grille = border_value CPU, halos lus
+     dans un **snapshot d'entrée** (`grid.data.copy()`, sinon les tuiles déjà
+     écrites contaminent le halo des suivantes — bug trouvé et corrigé) ;
+   - ops colonne (deposit/etch dir, etch_selective dir, cmp) : **tuiles (x,y)
+     à z complet, sans halo**, masque découpé par tuile ;
+   - tailles de tuiles **fixées une fois** (`_FH_CACHE`/`_TILE_CACHE`) : sinon
+     chaque op change de shape de ctx et recompile tous les noyaux (hang à
+     10⁹ avant ce fix — noyaux en closure compilés par instance de ctx) ;
+   - grow / epitaxy seed|crystal / etch_crystal / fill (propagation globale)
+     : erreur claire en mode tuilé — à tuiler par itération à point fixe.
+   - Résultats 10⁹ vx (1000³, GTX 1660, 2026-11-19), `vf bench 1000
+     --backend all`, ms CPU/GPU : conformal t=5 9213/2714, t=20 10348/5693,
+     dir t=10 4286/4276, iso t=5 9234/2854, t=20 10440/6566, etch dir t=30
+     312/3261, cmp 4066/5587, height_map 1102/985. Le GPU gagne sur les
+     stencils (×1,6–×3,4) ; les ops colonne paient 2×N octets PCIe/op côté
+     GPU → parité/perte (×0,1–×1,0) à cette échelle sur cette carte.
+   - Test : `test_tiled_mode_matches_cpu` (octets = CPU en tuilé forcé).
+4. Bench nightly (10⁷/10⁸ vx) comme prévu au quality gate §8 d'ARCHITECTURE.md.
+5. Optionnel : `vf run --backend auto` (GPU si taichi présent, sinon CPU),
    comme documenté mais pas encore implémenté.
 
 ## 8. Fichiers clés à lire en priorité
