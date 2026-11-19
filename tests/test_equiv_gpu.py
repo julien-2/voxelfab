@@ -153,6 +153,38 @@ def test_cmp():
     _check("cmp", None, 20, stop_on=1)
 
 
+def test_resident_mode_matches_per_op_mode():
+    """Le mode device-résident (bind/release autour d'une séquence d'étapes)
+    doit produire exactement les mêmes octets que le mode par-op (sync
+    hôte↔device à chaque étape)."""
+    from voxelfab.ops.gpu import bind_resident, release_resident
+    seq = [
+        ("deposit", "conformal", (2, 5), {}),
+        ("etch", "directional", (8,), {"mask": _mask_rect()}),
+        ("etch", "isotropic", (3,), {"materials": (2,)}),
+        ("deposit", "directional", (1, 6), {"on_materials": (1,)}),
+        ("cmp", None, (20,), {"stop_on": 1}),
+        ("fill", None, (2, 20), {}),
+    ]
+    g_batch, _ = _build()      # mode par-op (défaut)
+    g_res, _ = _build()        # mode device-résident
+    for op, mode, args, kw in seq:
+        get_step("gpu", op, mode)(g_batch, *args, **kw)
+    bind_resident(g_res)
+    try:
+        for op, mode, args, kw in seq:
+            get_step("gpu", op, mode)(g_res, *args, **kw)
+    finally:
+        release_resident(g_res)
+    assert g_batch.data.tobytes() == g_res.data.tobytes(), \
+        "mode device-résident != mode par-op"
+    # et les deux valent le CPU
+    g_cpu, _ = _build()
+    for op, mode, args, kw in seq:
+        get_step("cpu", op, mode)(g_cpu, *args, **kw)
+    assert g_cpu.data.tobytes() == g_res.data.tobytes()
+
+
 def test_demo_deck_identical_cpu_gpu(tmp_path):
     """Deck de démo complet (17 étapes) : structure_sha256 identique."""
     deck = yaml.safe_load(DEMO_DECK)

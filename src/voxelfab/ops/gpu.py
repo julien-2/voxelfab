@@ -1004,16 +1004,44 @@ if HAS_TAICHI:
         ctx.k["copy51"]()                       # restaure w1
 
     def _gpu_op(fn):
-        """Décorateur : sync hôte->device, exécute, sync device->hôte."""
+        """Décorateur : sync hôte->device, exécute, sync device->hôte.
+
+        En mode device-résident (bind_resident pose grid._gpu_resident),
+        les syncs sont sautés : la grille reste dans le ti.field entre les
+        étapes et un seul D2H final (release_resident) remplit grid.data."""
         def wrapper(grid, *args, **kwargs):
             ctx = _ctx(grid)
-            ctx.d.from_numpy(grid.data)
+            resident = getattr(grid, "_gpu_resident", False)
+            if not resident:
+                ctx.d.from_numpy(grid.data)
             r = fn(ctx, grid, *args, **kwargs)
-            grid.data = ctx.d.to_numpy()
+            if resident:
+                ti.sync()   # lancements Taichi asynchrones : on attend la fin
+                            # réelle de l'étape (chrono par étape honnête)
+            else:
+                grid.data = ctx.d.to_numpy()
             return r
         wrapper.__name__ = fn.__name__
         wrapper.__doc__ = fn.__doc__
         return wrapper
+
+    def bind_resident(grid):
+        """Mode device-résident : copie grid.data sur le device UNE fois ;
+        les étapes suivantes chaînent directement sur le device (supprime
+        ~2×N octets de transfert PCIe par étape)."""
+        if not HAS_TAICHI:
+            raise RuntimeError("bind_resident : taichi non installé "
+                               "(extra [gpu])")
+        ctx = _ctx(grid)
+        ctx.d.from_numpy(grid.data)
+        grid._gpu_resident = True
+
+    def release_resident(grid):
+        """Termine le mode device-résident : unique D2H, grid.data à jour
+        (à appeler avant toute lecture hôte : exports, métrologie, vues)."""
+        ctx = _ctx(grid)
+        grid.data = ctx.d.to_numpy()
+        grid._gpu_resident = False
 
     # ----------------------------------------------------------------------
     # Étapes enregistrées (unités : VOXELS, mêmes signatures que cpu.py)

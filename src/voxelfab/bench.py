@@ -43,10 +43,14 @@ def _bench_one(n: int, backend: str) -> dict:
     etch_dir = get_step(backend, "etch", "directional")
     cmp_step = get_step(backend, "cmp")
     substrate(g, SiO2, n // 2)
+    resident = backend != "cpu"
     print(f"\n=== bench {g.nx}x{g.ny}x{g.nz} = "
           f"{g.nx * g.ny * g.nz / 1e6:.1f} M voxels "
-          f"(backend: {backend}, numba: {HAS_NUMBA}) ===")
+          f"(backend: {backend}, numba: {HAS_NUMBA}, "
+          f"{'mode device-résident' if resident else 'sync par étape'}) ===")
 
+    mask = np.zeros((g.nx, g.ny), bool)
+    mask[::4, :] = True
     steps = [
         ("deposit conformal t=5", lambda gg: dep_conf(gg, SiN, 5)),
         ("deposit conformal t=20", lambda gg: dep_conf(gg, SiN, 20)),
@@ -57,18 +61,23 @@ def _bench_one(n: int, backend: str) -> dict:
         ("cmp", lambda gg: cmp_step(gg, n - 8, stop_on=SiO2)),
         ("height_map", lambda gg: gg.height_map()),
     ]
-    mask = np.zeros((g.nx, g.ny), bool)
-    mask[::4, :] = True
 
-    if backend != "cpu":
-        # warm-up JIT Taichi : une passe non chronométrée sur une grille
-        # fictive de même shape (les noyaux sont compilés par shape)
+    if resident:
+        # GPU : warm-up JIT (passe non chronométrée sur grille fictive de même
+        # shape, les noyaux sont compilés par shape) puis run en mode
+        # device-résident — comme DeckRunner.run().
+        from .ops.gpu import bind_resident, release_resident
         scratch = VoxelGrid(n, n, n, pitch=1.0)
         s2 = scratch.add_material("SiO2", "#c9c9c9")
         scratch.add_material("SiN", "#8bc34a")
         substrate(scratch, s2, n // 2)
-        for _, fn in steps:
-            fn(scratch)
+        bind_resident(scratch)
+        try:
+            for _, fn in steps:
+                fn(scratch)
+        finally:
+            release_resident(scratch)
+        bind_resident(g)
 
     results: dict[str, float] = {}
 
@@ -79,6 +88,10 @@ def _bench_one(n: int, backend: str) -> dict:
         results[label] = dt
         print(f"  {label:<28} {dt * 1e3:8.0f} ms")
 
-    for label, fn in steps:
-        timed(label, lambda gg=g, f=fn: f(gg))
+    try:
+        for label, fn in steps:
+            timed(label, lambda gg=g, f=fn: f(gg))
+    finally:
+        if resident:
+            release_resident(g)
     return results

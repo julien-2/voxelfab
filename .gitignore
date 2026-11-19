@@ -5,5 +5,8 @@ __pycache__/
 *.png
 *.vtk
 *.stl
+*.h5
+*.xmf
 report.json
 demo_deck.yaml
+out*/

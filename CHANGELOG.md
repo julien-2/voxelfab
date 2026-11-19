@@ -4,6 +4,23 @@ Format : versions stables alignées sur `pyproject.toml` (semver). Le hash
 `structure_sha256` du deck de démo (`e1316a2970a1e6f38612e6ee98d954123e5fe173f2acd06053d8cb63283743c1`)
 garantit la reproductibilité de chaque version.
 
+## Non publié (v0.2.x)
+
+- **Mode device-résident** (backend GPU) : `ops/gpu.py` gagne
+  `bind_resident(grid)` / `release_resident(grid)` ; `DeckRunner.run()`
+  l'active automatiquement pour `--backend gpu` (un seul H2D en entrée,
+  un seul D2H avant les exports — la grille reste dans le `ti.field` pendant
+  tout le deck). Le wrapper `_gpu_op` saute alors ses syncs et fait
+  `ti.sync()` par étape (les lancements Taichi sont asynchrones : sans ça,
+  le chrono ne mesure que le launch). Supprime ~2×N octets de PCIe par
+  étape. Test `test_resident_mode_matches_per_op_mode` : octets identiques
+  au mode par-op et au CPU. `vf bench` mesure en mode résident côté GPU.
+- Mesures 2026-11-19 (GTX 1660, noyaux chauds, mode résident) :
+  256³ ×8,0–×153,5 ; 464³ (100 M vx) **×8,0–×39,8** (conformal t=5 ×31,
+  etch dir t=30 ×39,8, iso t=5 ×21,8) — dans la fourchette 10–50× de la
+  roadmap à 10⁸ vx. (Avant, sync par étape : ×2,3–×7,9 à 464³.)
+- Deck démo (0,46 M vx) : hash inchangé `e1316a29…` des deux backends.
+
 ## v0.2.0 — 2026-11-19
 
 Publiée le 2026-11-19 : PR #6 mergée dans `main` (merge commit `2dd3a36`),

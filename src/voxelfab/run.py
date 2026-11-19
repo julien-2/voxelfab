@@ -148,23 +148,35 @@ class DeckRunner:
     def run(self):
         self.setup()
         d = self.deck
-        for i, step in enumerate(d.get("steps", []), start=1):
-            # garde : YAML 1.1 convertit les clés non cotées 'on/yes/off/no'
-            # en booléens -> erreur claire plutôt qu'un crash JSON ultérieur
-            for k in step:
-                if isinstance(k, bool):
-                    raise DeckError(
-                        f"étape {i} : clé YAML booléenne (on/yes/off/no…) — "
-                        f"écrire 'on_materials:' ou coter la clé ('on': …)")
-            t0 = time.perf_counter()
-            try:
-                self._exec(step)
-            except DeckError as e:
-                raise DeckError(f"étape {i} : {e}") from None
-            except KeyError as e:
-                raise DeckError(f"étape {i} : paramètre manquant {e}") from None
-            self.timings.append((i, step.get("op", "?"),
-                                 time.perf_counter() - t0))
+        # Mode device-résident (backend gpu) : la grille reste sur le device
+        # pendant toutes les étapes — un seul H2D en entrée, un seul D2H en
+        # sortie (juste avant les exports), soit ~2×N octets de PCIe en moins
+        # par étape. Voir ops/gpu.py (bind_resident/release_resident).
+        resident = self.backend == "gpu"
+        if resident:
+            from .ops.gpu import bind_resident, release_resident
+            bind_resident(self.g)
+        try:
+            for i, step in enumerate(d.get("steps", []), start=1):
+                # garde : YAML 1.1 convertit les clés non cotées 'on/yes/off/no'
+                # en booléens -> erreur claire plutôt qu'un crash JSON ultérieur
+                for k in step:
+                    if isinstance(k, bool):
+                        raise DeckError(
+                            f"étape {i} : clé YAML booléenne (on/yes/off/no…) — "
+                            f"écrire 'on_materials:' ou coter la clé ('on': …)")
+                t0 = time.perf_counter()
+                try:
+                    self._exec(step)
+                except DeckError as e:
+                    raise DeckError(f"étape {i} : {e}") from None
+                except KeyError as e:
+                    raise DeckError(f"étape {i} : paramètre manquant {e}") from None
+                self.timings.append((i, step.get("op", "?"),
+                                     time.perf_counter() - t0))
+        finally:
+            if resident:
+                release_resident(self.g)
         self.outputs()
         self.report_deck()
 

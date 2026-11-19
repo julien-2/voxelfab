@@ -148,15 +148,17 @@ runtime CUDA). Sans GPU, `ti.init` fallback sur `ti.cpu` dans `ops/gpu.py`
 
 1. ~~Ouvrir la PR et taguer v0.2.0~~ **fait le 2026-11-19** (PR #6 mergée,
    tag `v0.2.0`).
-2. **Mode device-resident** (idée) : aujourd'hui chaque op GPU fait
-   H2D→op→D2H (~2×N octets PCIe par étape, ~40 ms/étape à 10⁸ vx). En mode
-   device-resident, la grille reste dans le `ti.field` pendant tout le deck :
-   `bind_resident(grid)` avant la boucle des étapes (un seul H2D, flag
-   `grid._gpu_resident = True`, le wrapper `_gpu_op` saute ses syncs),
-   `release_resident(grid)` après la boucle (unique D2H avant HDF5/métrologie/
-   vues, qui lisent `grid.data` hôte). Gain : supprime le PCIe par étape —
-   levier principal pour viser les 10–50× à 10⁸–10⁹ vx. L'équivalence
-   voxel-exact est préservée (mêmes octets au D2H final, tests inchangés).
+2. ~~Mode device-resident~~ **implémenté le 2026-11-19** : `bind_resident()` /
+   `release_resident()` dans `ops/gpu.py`, activé automatiquement par
+   `DeckRunner.run()` pour `--backend gpu` (un seul H2D/D2H par run au lieu
+   d'un par étape). **Piège** : les lancements de noyaux Taichi sont
+   asynchrones — le wrapper fait `ti.sync()` par étape en mode résident,
+   sinon le chrono ne mesure que le launch (~2 ms) et les speedups
+   affichés sont fictifs (×100+). Avec sync : 464³ (100 M vx) ×8,0–×39,8,
+   256³ ×8,0–×153,5 (GTX 1660, noyaux chauds) — la fourchette 10–50× de la
+   roadmap est atteinte à 10⁸ vx. Test : `test_resident_mode_matches_per_op_mode`
+   (octets identiques au mode par-op et au CPU). Bench : `vf bench` tourne en
+   mode résident côté GPU.
 3. Bench nightly (10⁷/10⁸ vx) comme prévu au quality gate §8 d'ARCHITECTURE.md.
 4. Optionnel : `vf run --backend auto` (GPU si taichi présent, sinon CPU),
    comme documenté mais pas encore implémenté.
