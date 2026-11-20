@@ -809,6 +809,55 @@ Pour des axes en nanomètres plutôt qu'en voxels, ajoutez `extent` à
 
 ---
 
+### 6.6 `history.h5` — tout le procédé dans UN seul fichier (issue #9)
+
+Au lieu de checkpoints séparés (§4.6), le bloc `history:` archive **chaque
+étape** du run dans un fichier HDF5 unique et compact :
+
+```yaml
+history: {file: history.h5, mode: delta, every: 1}   # every: 1 étape sur N
+```
+
+**Modes** (taille croissante) :
+
+| Mode | Contenu par étape | Quand l'utiliser |
+| --- | --- | --- |
+| `summary` | attrs seulement : op, paramètres, `n_changed`, hash de la grille | audit rapide, métadonnées |
+| `delta` (défaut) | **runs RLE (axe x)** des voxels modifiés : `runs` (m,4) `[z,y,x0,x1]` + `runs_mats` (m,) | procédés à couches minces — le compact |
+| `full` | grille complète gzip par étape | petites grilles creuses |
+
+Chaque étape a un **hash chaîné** `step_sha256 = sha256(prev ‖ op ‖ params ‖
+payload)` : toute altération d'une étape est détectable. `step_0000` = état
+initial (avant la première étape).
+
+Mesure (grille 256³ = 16,7 M vx, substrat + 3 dépôts de couches minces) :
+**delta = 42,9 ko contre full = 166 ko** — le delta ne stocke que les voxels
+modifiés, encodés en runs (une couche pleine = 1 run par ligne).
+
+**Lecture** :
+
+```bash
+vf history out/history.h5                          # liste les étapes (op, Δvx, sha…)
+vf history out/history.h5 --step 7 -o out/         # exporte l'état étape 7 en h5
+vf history out/history.h5 --step 7 --format png   # ou png / vtk
+```
+
+```python
+from voxelfab.history import load_history, grid_at
+meta = load_history("out/history.h5")      # métadonnées + liste des étapes
+g = grid_at("out/history.h5", 7)           # VoxelGrid byte-identique à l'étape 7
+```
+
+Notes :
+
+- En backend `gpu` device-résident, chaque étape enregistrée fait un D2H
+  temporaire (`sync_to_host`) — comptez ce coût si `every: 1` à 10⁸ vx.
+- Aucun `history:` par défaut : golden et perfs inchangés.
+- Reconstruction testée byte-exact contre des runs tronqués, et sur le deck
+  démo l'état final reconstruit a le hash golden `e1316a29…`.
+
+---
+
 ## 7. Déterminisme et tests golden
 
 **Contrat** : même deck + même layout + même version du moteur → structure

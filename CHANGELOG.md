@@ -6,6 +6,17 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **Historique du procédé dans UN seul fichier HDF5** (issue #9) : nouveau
+  bloc `history: {file: history.h5, mode: delta|summary|full, every: N}`.
+  Mode `delta` (défaut) = runs RLE axe x des voxels modifiés par étape
+  (`runs` (m,4) + `runs_mats`), hash chaîné `step_sha256` par étape ;
+  `step_0000` = état initial. Lecture : `load_history()` + `grid_at(path, k)`
+  (reconstruction byte-exact, testée vs runs tronqués et vs golden démo) ;
+  CLI `vf history FICHIER [--step K] [--format h5|png|vtk]`. Taille mesurée
+  (256³, 3 dépôts minces) : delta 42,9 ko vs full 166 ko. GPU résident : D2H
+  temporaire par étape via `sync_to_host`. Golden `e1316a29…` inchangé.
+  Tests : `tests/test_history.py` (8 tests). 86 passed.
+
 - **Checkpoints entre étapes** (issue #12, sous-issue de #9) : sauvegarde de
   l'état de la grille après une étape clef — `checkpoint: true | [formats] |
   {format: fichier}` dans le step, ou global `checkpoints: {every: N, dir,

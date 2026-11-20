@@ -19,6 +19,13 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #9 faite** : `history.h5`,
+  historique de toutes les étapes dans UN fichier HDF5 (`history:` dans le
+  deck, modes summary/delta/full). Delta = runs RLE axe x des voxels modifiés
+  + hash chaîné par étape ; reconstruction byte-exact via `grid_at(k)` ;
+  CLI `vf history`. Taille mesurée 256³ : delta 42,9 ko vs full 166 ko.
+  GPU résident : D2H temporaire par étape (`sync_to_host`). Golden
+  `e1316a29…` OK, 86 tests passés (`tests/test_history.py`).
 - **2026-11-20** (ce PC, `main`) — **issue #12 faite** : checkpoints entre
   étapes (`checkpoint:` dans le step ou `checkpoints: {every, dir, formats}`
   global ; formats png/h5/vtk/stl ; nommage auto `ckpt/step_XXXX_op.ext`).

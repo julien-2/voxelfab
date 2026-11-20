@@ -5,6 +5,7 @@
     vf demo [-o outdir]
     vf bench [n]
     vf xmf [structure.h5]
+    vf history history.h5 [--step K] [-o outdir] [--format h5|png|vtk]
 """
 
 from __future__ import annotations
@@ -57,6 +58,33 @@ def cmd_xmf(args):
     write_xmf(args.file)
 
 
+def cmd_history(args):
+    """`vf history FICHIER` liste les étapes ; `--step K` exporte l'état K."""
+    from .history import load_history, grid_at
+    meta = load_history(args.file)
+    print(f"history  : {args.file}")
+    print(f"mode={meta.get('mode')}  grille={list(meta['grid'])}  "
+          f"pitch={meta.get('pitch_nm')} nm  backend={meta.get('backend')}  "
+          f"étapes={len(meta['steps'])}")
+    for s in meta["steps"]:
+        print(f"  étape {s['index']:3d}  {s['op']:<14s} Δ={s['n_changed']:>9d} vx"
+              f"  sha={s['step_sha256'][:12]}…  {s['params']}")
+    if args.step is not None:
+        from .export import export_h5, export_vtk, render_views
+        g = grid_at(args.file, args.step)
+        outdir = Path(args.outdir or Path(args.file).parent)
+        outdir.mkdir(parents=True, exist_ok=True)
+        base = outdir / f"step_{args.step:04d}"
+        if args.format == "h5":
+            export_h5(g, filename=str(base) + ".h5",
+                      provenance={"backend": str(meta.get("backend", "?"))})
+        elif args.format == "png":
+            render_views(g, filename=str(base) + ".png",
+                         title=f"étape {args.step} — {args.file}")
+        else:
+            export_vtk(g, filename=str(base) + ".vtk")
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="vf", description="moteur de fabrication virtuelle voxel "
@@ -101,6 +129,18 @@ def main():
     p_xmf.add_argument("file", nargs="?", default="structure.h5",
                        help="fichier .h5 (défaut : structure.h5)")
     p_xmf.set_defaults(fn=cmd_xmf)
+
+    p_hist = sub.add_parser("history",
+                            help="lire un history.h5 : lister les étapes, "
+                                 "ou exporter l'état à une étape (--step)")
+    p_hist.add_argument("file", help="fichier history.h5")
+    p_hist.add_argument("--step", type=int, default=None,
+                        help="exporter l'état à l'étape K (0 = initial)")
+    p_hist.add_argument("-o", "--outdir", default=None,
+                        help="répertoire de sortie pour --step")
+    p_hist.add_argument("--format", default="h5", choices=["h5", "png", "vtk"],
+                        help="format d'export pour --step (défaut : h5)")
+    p_hist.set_defaults(fn=cmd_history)
 
     args = ap.parse_args()
     try:

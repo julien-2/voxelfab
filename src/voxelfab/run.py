@@ -193,6 +193,28 @@ class DeckRunner:
             print("[grid] WARNING : nz_max (auto-grow) non supporté en backend "
                   "gpu — champs Taichi à shape fixe ; les dépôts au-delà de "
                   f"nz={self.g.nz} seront tronqués")
+        # historique du procédé dans UN seul fichier (issue #9) : état initial
+        # (avant bind_resident, grid.data est encore côté hôte)
+        hw = None
+        hcfg = d.get("history")
+        if hcfg:
+            from .history import HistoryWriter
+            if not isinstance(hcfg, dict):
+                raise DeckError(f"'history:' doit être un dict, pas {hcfg!r}")
+            mode = str(hcfg.get("mode", "delta"))
+            every = int(hcfg.get("every", 1) or 1)
+            hfile = Path(self.outdir) / str(hcfg.get("file", "history.h5"))
+            hfile.parent.mkdir(parents=True, exist_ok=True)
+            if resident:
+                print(f"[history] backend gpu résident : un D2H par étape "
+                      f"enregistrée (every={every})")
+            try:
+                hw = HistoryWriter(hfile, self.g, self.provenance(),
+                                   mode=mode, every=every)
+            except ValueError as e:
+                raise DeckError(f"history: {e}") from None
+            hw.record(0, "init", {}, self.g)
+            print(f"[history] {hfile} (mode={mode}, every={every})")
         if resident:
             from .ops.gpu import bind_resident, release_resident
             bind_resident(self.g)
@@ -215,9 +237,20 @@ class DeckRunner:
                 self.timings.append((i, step.get("op", "?"),
                                      time.perf_counter() - t0))
                 self._maybe_checkpoint(i, step)
+                if hw is not None and i % hw.every == 0:
+                    if resident:
+                        from .ops.gpu import sync_to_host
+                        sync_to_host(self.g)   # D2H temporaire pour l'historique
+                    params = {k: v for k, v in step.items()
+                              if k not in ("op", "checkpoint")}
+                    sha = hw.record(i, step.get("op", "?"), params, self.g)
+                    print(f"[history] étape {i} ({step.get('op')}) "
+                          f"sha={sha[:12]}…")
         finally:
             if resident:
                 release_resident(self.g)
+            if hw is not None:
+                hw.close()
         self.outputs()
         self.report_deck()
 
