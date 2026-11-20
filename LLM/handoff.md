@@ -1,9 +1,31 @@
 # Handoff — voxelfab : backend GPU Taichi (v0.2) implémenté + validé
 
-**Date : 2026-11-19** (travail fait le 19 nov 2026, ~09:15–12:00 UTC+1)
-**Branche : `v0.2-taichi-gpu`**, commit `8e167c0` — poussé sur
-`https://github.com/julien-2/voxelfab` (`main` inchangé : `fb4ec5b`).
-PR à ouvrir si besoin : https://github.com/julien-2/voxelfab/pull/new/v0.2-taichi-gpu
+**Dernière mise à jour : 2026-11-20 (UTC)** — convention de mise à jour en §0.
+**Branche d'origine : `v0.2-taichi-gpu`**, commit `8e167c0`. **Ce fichier vit
+sur `main`** (intégré via PR #6 mergée le 2026-11-19 ; puis v0.2.1
+device-résident et v0.2.2 tiling via PR #7, tags `v0.2.0`–`v0.2.2`).
+
+## 0. Convention de mise à jour (multi-PC)
+
+On travaille sur **plusieurs machines** : ce handoff est le point de passage
+obligatoire entre deux sessions, quelle que soit la machine.
+
+- Toute session qui reprend le travail **ajoute une entrée datée**
+  (AAAA-MM-JJ, UTC) en tête du journal ci-dessous : machine, branche,
+  ce qui a été fait, résultats (tests, hash, perfs), blocages.
+- Ne pas réécrire l'historique : les entrées s'ajoutent, on ne les efface pas.
+- En fin de session, commit + push de ce fichier sur `main` avant de
+  changer de PC.
+
+### Journal des mises à jour
+
+- **2026-11-20** (ce PC, `main`) — mise en place de cette convention
+  multi-PC (section §0 + journal daté). État constaté : PR #6 et #7 déjà
+  mergées le 2026-11-19, tags `v0.2.0`–`v0.2.2` posés.
+- **2026-11-19** (PC GTX 1660, branche `v0.2-taichi-gpu`, ~09:15–12:00
+  UTC+1) — implémentation + validation du backend GPU Taichi (détail dans
+  les §1–§8 ci-dessous), puis v0.2.1 device-résident et v0.2.2 tiling le
+  même jour.
 
 ## 1. Contexte et ce qui a été fait
 
