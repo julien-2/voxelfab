@@ -20,6 +20,14 @@ obligatoire entre deux sessions, quelle que soit la machine.
 ### Journal des mises à jour
 
 - **2026-11-20** (ce PC, `main`) — issues d'amélioration ouvertes :
+  [#10](https://github.com/julien-2/voxelfab/issues/10) masques (polarité
+  clear/dark, merge multi-datatypes `gate: [10, [0,4]]`, bias individuel par
+  couche) ; [#11](https://github.com/julien-2/voxelfab/issues/11) init
+  (nz auto-extensible — aujourd'hui troncature silencieuse via `clip` dans
+  `cpu.py:248-249` — et substrat multicouche déclaratif type SOI) ;
+  [#12](https://github.com/julien-2/voxelfab/issues/12) (sous-issue de #9)
+  checkpoints entre étapes (png/h5/vtk/pyvista) pour présentation + debug.
+- **2026-11-20** (ce PC, `main`) — issues d'amélioration ouvertes :
   [#8](https://github.com/julien-2/voxelfab/issues/8) deck YAML hiérarchisé
   Route > Module > Opérations > steps (process flow multi-fab, contenu à
   détailler ensemble) ; [#9](https://github.com/julien-2/voxelfab/issues/9)
