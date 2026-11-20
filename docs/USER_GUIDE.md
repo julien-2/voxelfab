@@ -519,30 +519,66 @@ c'est ainsi qu'on grave *partout sauf* la grille.
 
 Pour voir le procédé **au fur et à mesure** (et déboguer une étape), on
 peut sauvegarder l'état de la grille **après certaines étapes** — en plus
-des sorties finales :
+des sorties finales. Exemple de deck complet :
 
 ```yaml
+version: 1
+grid: {pitch_nm: 2.0, nx: 120, ny: 60, nz: 64}
+materials: {Si: {color: '#4d79ff'}, poly: {color: '#e64a19'}, ...}
 checkpoints:                    # global : toutes les N étapes
   every: 5                      # toutes les 5 étapes
   dir: ckpt                     # répertoire (relatif au outdir, défaut "ckpt")
   formats: [png, h5]            # défaut [png, h5]
 steps:
   - {op: substrate, material: Si, thickness_nm: 40,
-     checkpoint: true}                       # -> ckpt/step_0001_substrate.{png,h5}
+     checkpoint: true}                        # -> ckpt/step_0001_substrate.{png,h5}
   - {op: deposit, material: poly, thickness_nm: 36,
-     checkpoint: {png: poly.png, h5: poly.h5}}   # noms explicites (relatifs au outdir)
-  - {op: cmp, target_z: 52, checkpoint: [vtk]}   # liste de formats
+     checkpoint: {png: poly.png, h5: poly.h5}}  # noms explicites (relatifs au outdir)
+  - {op: cmp, target_z: 52, checkpoint: [vtk]}  # liste de formats -> ckpt/step_0003_cmp.vtk
+outputs:
+  - {type: h5, file: structure.h5}           # sorties finales, comme d'habitude
+  - {type: views, file: mos3d.png}
 ```
 
-- Formats : `png` (vues matplotlib), `h5` (HDF5 rechargeable avec `load_h5`,
-  attribut `prov_checkpoint_step`), `vtk` (ParaView/PyVista, extra `[view]`),
-  `stl`.
-- Nommage automatique : `{outdir}/{dir}/step_{i:04d}_{op}.{ext}`.
-- Le `h5` de checkpoint est **byte-identique** à la grille à ce moment du
-  procédé (testé contre un run tronqué à la même étape).
+**Trois formes pour `checkpoint:` dans une étape :**
+
+| Forme | Exemple | Fichiers écrits |
+| --- | --- | --- |
+| `true` | `checkpoint: true` | formats par défaut, nommage auto |
+| liste | `checkpoint: [vtk]` | ces formats, nommage auto |
+| dict | `checkpoint: {png: poly.png, h5: poly.h5}` | noms explicites (relatifs au `-o outdir`) |
+
+**Formats** (mêmes dépendances que §4.5) :
+
+| Format | Fichier | Dépendance | Usage |
+| --- | --- | --- | --- |
+| `png` | vues de dessus + coupes | cœur (matplotlib) | présentation rapide |
+| `h5` | HDF5 canonique, attr `prov_checkpoint_step` | cœur (h5py) | rechargeable, debug précis |
+| `vtk` | volume ParaView/PyVista | extra `[view]` | inspection 3D étape par étape |
+| `stl` | maillage par matériau | scikit-image + numpy-stl | impression / CAO |
+
+Nommage automatique : `{outdir}/{dir}/step_{i:04d}_{op}.{ext}`
+(ex. `out/ckpt/step_0007_cmp.h5`).
+
+**Lire un checkpoint en Python** (le h5 est byte-identique à la grille à ce
+moment du procédé — testé contre un run tronqué à la même étape) :
+
+```python
+from voxelfab.export import load_h5
+import h5py
+
+g = load_h5("out/ckpt/step_0007_cmp.h5")          # VoxelGrid à l'étape 7
+with h5py.File("out/ckpt/step_0007_cmp.h5") as f:
+    print(f.attrs["prov_checkpoint_step"])         # 7
+```
+
+Notes :
+
 - En backend `gpu` device-résident, chaque checkpoint fait un transfert
-  D2H temporaire (`sync_to_host`) sans quitter le mode résident.
+  D2H temporaire (`sync_to_host`) **sans quitter** le mode résident.
 - Aucun checkpoint par défaut : le hash golden et les perfs sont inchangés.
+- Pour archiver **toutes** les étapes dans **un seul fichier** compact
+  (deltas), voir l'historique (§6.6).
 
 ---
 
