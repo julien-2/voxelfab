@@ -19,6 +19,11 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #3 (piste 1)**: BFS `fill` /
+  `epitaxy seed` en UN noyau par passe ping-pong + flag fill lu tous les 8
+  passes (plus de D2H/passe). Bit-identique (87 tests OK, golden inchangé).
+  Mesuré ici (taichi x64, warm-up) : fill 256³ ×1,4, 128³ ×1,5 ; seed 256³ ×1,4.
+  Reste en piste : union-find O(N) pour viser mieux.
 - **2026-11-20** (ce PC, `main`) — **issue #11 maintenant complète (GPU
   inclus)** : avec `grid.nz_max`, le backend gpu passe en mode par-op (plus
   device-résident) et grow côté hôte entre les étapes

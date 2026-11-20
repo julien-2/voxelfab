@@ -640,6 +640,59 @@ if HAS_TAICHI:
                         hit != 0 and w1[i, j, k] != 0 and w4[i, j, k] == 0,
                         ti.u8)
 
+            @ti.kernel
+            def k_seed_pass_ab():
+                """Une passe BFS seed en UN noyau : w3 = w4 | (dil6(w4) & air
+                & ~w4) — fusion de or_w4_w3 + dil6_and_not_w4_w1_w3 (x2 moins
+                de lancements, bit-identique)."""
+                for i, j, k in w3:
+                    old = w4[i, j, k]
+                    hit = 0
+                    if i > 0 and w4[i - 1, j, k] != 0:
+                        hit = 1
+                    if i < nx - 1 and w4[i + 1, j, k] != 0:
+                        hit = 1
+                    if j > 0 and w4[i, j - 1, k] != 0:
+                        hit = 1
+                    if j < ny - 1 and w4[i, j + 1, k] != 0:
+                        hit = 1
+                    if k > 0 and w4[i, j, k - 1] != 0:
+                        hit = 1
+                    if k < nz - 1 and w4[i, j, k + 1] != 0:
+                        hit = 1
+                    nw = old
+                    if hit != 0 and w1[i, j, k] != 0 and old == 0:
+                        nw = 1
+                    w3[i, j, k] = ti.cast(nw, ti.u8)
+
+            @ti.kernel
+            def k_seed_pass_ba():
+                """Passe retour : w4 = w3 | (dil6(w3) & air & ~w3)."""
+                for i, j, k in w4:
+                    old = w3[i, j, k]
+                    hit = 0
+                    if i > 0 and w3[i - 1, j, k] != 0:
+                        hit = 1
+                    if i < nx - 1 and w3[i + 1, j, k] != 0:
+                        hit = 1
+                    if j > 0 and w3[i, j - 1, k] != 0:
+                        hit = 1
+                    if j < ny - 1 and w3[i, j + 1, k] != 0:
+                        hit = 1
+                    if k > 0 and w3[i, j, k - 1] != 0:
+                        hit = 1
+                    if k < nz - 1 and w3[i, j, k + 1] != 0:
+                        hit = 1
+                    nw = old
+                    if hit != 0 and w1[i, j, k] != 0 and old == 0:
+                        nw = 1
+                    w4[i, j, k] = ti.cast(nw, ti.u8)
+
+            @ti.kernel
+            def k_copy_w3_w4():
+                for i, j, k in w4:
+                    w4[i, j, k] = w3[i, j, k]
+
             # --- surface exposée + bords (epitaxy crystal / etch_crystal) ---
             @ti.kernel
             def k_exposed(mid: ti.u8):
@@ -920,6 +973,62 @@ if HAS_TAICHI:
                         w2[i, j, k] = 1
 
             @ti.kernel
+            def k_fill_pass_ab():
+                """Une passe fill en UN noyau : w3 = w2 | (dil6(w2) & air &
+                ~w2), flag si changement — fusion de fill_prop + or_w2_w3.
+                Le flag n'est plus lu (sync D2H) à chaque passe : check
+                tous les 8 passes côté hôte."""
+                for i, j, k in w3:
+                    old = w2[i, j, k]
+                    hit = 0
+                    if i > 0 and w2[i - 1, j, k] != 0:
+                        hit = 1
+                    if i < nx - 1 and w2[i + 1, j, k] != 0:
+                        hit = 1
+                    if j > 0 and w2[i, j - 1, k] != 0:
+                        hit = 1
+                    if j < ny - 1 and w2[i, j + 1, k] != 0:
+                        hit = 1
+                    if k > 0 and w2[i, j, k - 1] != 0:
+                        hit = 1
+                    if k < nz - 1 and w2[i, j, k + 1] != 0:
+                        hit = 1
+                    nw = old
+                    if hit != 0 and d[i, j, k] == 0 and old == 0:
+                        nw = 1
+                        ti.atomic_or(flag[None], 1)
+                    w3[i, j, k] = ti.cast(nw, ti.u8)
+
+            @ti.kernel
+            def k_fill_pass_ba():
+                """Passe retour : w2 = w3 | (dil6(w3) & air & ~w3)."""
+                for i, j, k in w2:
+                    old = w3[i, j, k]
+                    hit = 0
+                    if i > 0 and w3[i - 1, j, k] != 0:
+                        hit = 1
+                    if i < nx - 1 and w3[i + 1, j, k] != 0:
+                        hit = 1
+                    if j > 0 and w3[i, j - 1, k] != 0:
+                        hit = 1
+                    if j < ny - 1 and w3[i, j + 1, k] != 0:
+                        hit = 1
+                    if k > 0 and w3[i, j, k - 1] != 0:
+                        hit = 1
+                    if k < nz - 1 and w3[i, j, k + 1] != 0:
+                        hit = 1
+                    nw = old
+                    if hit != 0 and d[i, j, k] == 0 and old == 0:
+                        nw = 1
+                        ti.atomic_or(flag[None], 1)
+                    w2[i, j, k] = ti.cast(nw, ti.u8)
+
+            @ti.kernel
+            def k_copy_w3_w2():
+                for i, j, k in w2:
+                    w2[i, j, k] = w3[i, j, k]
+
+            @ti.kernel
             def k_fill_set(mat: ti.u8, max_z: ti.i32):
                 for i, j, k in d:
                     if w2[i, j, k] != 0 and k <= max_z:
@@ -984,6 +1093,9 @@ if HAS_TAICHI:
                 "dil6_and_w2_w1_w3": k_dil6_and_w2_w1_w3,
                 "or_w4_w3": k_or_w4_w3,
                 "dil6_and_not_w4_w1_w3": k_dil6_and_not_w4_w1_w3,
+                "seed_pass_ab": k_seed_pass_ab,
+                "seed_pass_ba": k_seed_pass_ba,
+                "copy_w3_w4": k_copy_w3_w4,
                 "exposed": k_exposed,
                 "edges": k_edges,
                 "init_ac_inf": k_init_ac_inf,
@@ -1003,6 +1115,9 @@ if HAS_TAICHI:
                 "clear_flag": k_clear_flag,
                 "fill_prop": k_fill_prop,
                 "or_w2_w3": k_or_w2_w3,
+                "fill_pass_ab": k_fill_pass_ab,
+                "fill_pass_ba": k_fill_pass_ba,
+                "copy_w3_w2": k_copy_w3_w2,
                 "fill_set": k_fill_set,
                 "cmp": k_cmp,
             }
@@ -1378,10 +1493,15 @@ if HAS_TAICHI:
         ctx.k["zero_grow"]()                              # w3=0, w4(reach)=0
         ctx.k["seed_air"](m2)                             # w1 = air & masque
         ctx.k["eq_w2"](seed)                              # w2 = graine
-        ctx.k["dil6_and_w2_w1_w3"]()                      # front = dil6 & air
-        for _ in range(int(depth)):
-            ctx.k["or_w4_w3"]()
-            ctx.k["dil6_and_not_w4_w1_w3"]()
+        ctx.k["dil6_and_w2_w1_w3"]()                      # w3 = front dist 1
+        ctx.k["copy_w3_w4"]()                             # w4 = reach (dist <= 1)
+        # passes BFS en UN noyau ping-pong (x2 moins de lancements,
+        # bit-identique) : après p passes, reach = dist <= p+1
+        depth = int(depth)
+        for p in range(depth - 1):
+            ctx.k["seed_pass_ab" if p % 2 == 0 else "seed_pass_ba"]()
+        if depth > 1 and depth % 2 == 0:
+            ctx.k["copy_w3_w4"]()                         # reach final -> w4
         ctx.k["set_w4"](material)
 
     @register("gpu", "epitaxy", "crystal")
@@ -1439,12 +1559,19 @@ if HAS_TAICHI:
     @_gpu_op
     def fill_trench(ctx, grid, material, max_z):
         ctx.k["fill_init"]()
-        for _ in range(grid.nx + grid.ny + grid.nz):
-            ctx.k["clear_flag"]()
-            ctx.k["fill_prop"]()
-            ctx.k["or_w2_w3"]()
-            if int(ctx.flag.to_numpy()) == 0:
-                break
+        # passes en UN noyau ping-pong (fusion fill_prop + or_w2_w3) ; le
+        # flag n'est lu (sync D2H) que tous les 8 passes, pas à chaque passe
+        max_passes = grid.nx + grid.ny + grid.nz
+        p_done = -1
+        for p in range(max_passes):
+            p_done = p
+            ctx.k["fill_pass_ab" if p % 2 == 0 else "fill_pass_ba"]()
+            if (p + 1) % 8 == 0 or p == max_passes - 1:
+                if int(ctx.flag.to_numpy()) == 0:
+                    break
+                ctx.k["clear_flag"]()
+        if p_done >= 0 and p_done % 2 == 0:
+            ctx.k["copy_w3_w2"]()                         # reach final -> w2
         ctx.k["fill_set"](material, max_z)
 
     @register("gpu", "cmp")

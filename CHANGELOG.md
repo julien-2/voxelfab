@@ -6,6 +6,16 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **perf(gpu): BFS ping-pong de `fill` / `epitaxy seed` allégé** (issue #3) :
+  une passe BFS = UN seul noyau ping-pong (`seed_pass_ab/ba`,
+  `fill_pass_ab/ba` : `dst = src | (dil6(src) & air & ~src)`) au lieu de 2
+  noyaux, et pour `fill` le flag de convergence n'est plus lu en D2H à
+  chaque passe mais tous les 8 passes. Bit-identique (87 tests d'équivalence
+  passent, golden `e1316a29…` inchangé). Mesuré (taichi x64, warm-up) :
+  fill 256³ 14,6s -> 10,5s (×1,4), 128³ 1,17s -> 0,77s (×1,5) ;
+  seed 256³ 1,79s -> 1,31s (×1,4). Sur vulkan software (overhead ~0,1 s/launch)
+  le gain est plus marqué ; reste en piste : union-find/labélisation O(N).
+
 - **Auto-grow de `nz` aussi en backend gpu** (issue #11, suite) : avec
   `grid.nz_max`, le mode device-résident est désactivé (mode par-op) pour
   grandir la grille côté hôte entre les étapes (`DeckRunner._estimate_z_needed`
