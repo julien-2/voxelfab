@@ -22,7 +22,7 @@ from .grid import VoxelGrid
 from .layout import grid_size_for, layout_info, masks_from_layout
 from .masks import mask_bands, mask_rectangle
 from .metro import Metrology
-from .ops import get_step
+from .ops import get_step, resolve_backend
 
 
 class DeckRunner:
@@ -33,7 +33,9 @@ class DeckRunner:
         self.deck = deck
         self.deck_path = deck_path
         self.outdir = outdir
-        self.backend = backend
+        # 'auto' -> 'gpu' si taichi présent, sinon 'cpu' ; le backend effectif
+        # est celui-ci (report.json / HDF5) pour la reproductibilité.
+        self.backend = resolve_backend(backend)
         self.timings: list[tuple] = []
         self.log: list[str] = []
         self.mat: dict = {}          # nom -> id

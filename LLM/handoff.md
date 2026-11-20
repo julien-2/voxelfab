@@ -19,6 +19,14 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — `--backend auto` implémenté
+  (`ops.resolve_backend`, résolu dans `DeckRunner` ; `vf run|demo --backend
+  auto` ; test `tests/test_backend_auto.py`). `auto` -> `gpu` si taichi
+  installé, sinon `cpu`. Sur ce PC : taichi présent, `auto` -> `gpu`, mais
+  `ti.init` tombe sur `arch=x64` (pas de CUDA) -> backend gpu en fallback
+  CPU Taichi (lent). Note : « auto » teste la présence de taichi, pas celle
+  d'un GPU NVIDIA. `uv run pytest tests/ -q` -> 55 passed, hash golden
+  `e1316a29…` OK des deux côtés.
 - **2026-11-20** (ce PC, `main`) — mise en place de cette convention
   multi-PC (section §0 + journal daté). État constaté : PR #6 et #7 déjà
   mergées le 2026-11-19, tags `v0.2.0`–`v0.2.2` posés.
@@ -207,8 +215,11 @@ runtime CUDA). Sans GPU, `ti.init` fallback sur `ti.cpu` dans `ops/gpu.py`
      GPU → parité/perte (×0,1–×1,0) à cette échelle sur cette carte.
    - Test : `test_tiled_mode_matches_cpu` (octets = CPU en tuilé forcé).
 4. Bench nightly (10⁷/10⁸ vx) comme prévu au quality gate §8 d'ARCHITECTURE.md.
-5. Optionnel : `vf run --backend auto` (GPU si taichi présent, sinon CPU),
-   comme documenté mais pas encore implémenté.
+5. ~~`vf run --backend auto`~~ **implémenté le 2026-11-20** :
+   `ops.resolve_backend('auto')` -> `gpu` si taichi présent, sinon `cpu`,
+   résolu dans `DeckRunner` (report.json/HDF5 gardent le backend effectif) ;
+   `vf run|demo --backend auto` ; test `tests/test_backend_auto.py` (deck démo
+   en auto, hash golden `e1316a29…` inchangé).
 
 ## 8. Fichiers clés à lire en priorité
 

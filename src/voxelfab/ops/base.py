@@ -185,3 +185,16 @@ def get_step(backend: str, op: str, mode: str | None = None):
 
 def available_backends() -> list:
     return sorted(REGISTRIES.keys())
+
+
+def resolve_backend(name: str) -> str:
+    """Résout un nom de backend : ``'auto'`` -> ``'gpu'`` si le backend GPU
+    (taichi) est disponible, sinon ``'cpu'``. Tout autre nom doit être dans
+    available_backends()."""
+    backends = available_backends()
+    if name == "auto":
+        return "gpu" if "gpu" in backends else "cpu"
+    if name not in backends:
+        raise KeyError(f"backend inconnu {name!r} "
+                       f"(disponibles : {', '.join(backends)})")
+    return name

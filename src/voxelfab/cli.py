@@ -1,6 +1,6 @@
 """CLI `vf` : run | info | demo | bench | xmf.
 
-    vf run deck.yaml [-o outdir] [--backend cpu]
+    vf run deck.yaml [-o outdir] [--backend cpu|gpu|auto]
     vf info deck.yaml
     vf demo [-o outdir]
     vf bench [n]
@@ -67,8 +67,10 @@ def main():
     p_run.add_argument("deck")
     p_run.add_argument("-o", "--outdir")
     p_run.add_argument("--backend", default="cpu",
-                       choices=available_backends(),
-                       help="backend d'exécution (défaut : cpu)")
+                       choices=available_backends() + ["auto"],
+                       help="backend d'exécution : cpu, gpu, ou auto "
+                            "(gpu si taichi présent, sinon cpu ; "
+                            "défaut : cpu)")
     p_run.set_defaults(fn=cmd_run)
 
     p_info = sub.add_parser("info", help="valider et résumer un deck")
@@ -78,7 +80,9 @@ def main():
     p_demo = sub.add_parser("demo", help="écrire + exécuter le deck de démo")
     p_demo.add_argument("-o", "--outdir")
     p_demo.add_argument("--backend", default="cpu",
-                        choices=available_backends())
+                        choices=available_backends() + ["auto"],
+                        help="cpu, gpu, ou auto (gpu si taichi présent, "
+                             "sinon cpu ; défaut : cpu)")
     p_demo.set_defaults(fn=cmd_demo)
 
     p_bench = sub.add_parser("bench",

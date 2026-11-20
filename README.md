@@ -46,7 +46,7 @@ steps, layouts in, 3D structures and virtual metrology out.
 ## Quickstart
 
     vf demo                          # write + run the demo MOSFET deck
-    vf run decks/demo_deck.yaml -o out/ [--backend cpu|gpu]   # run any deck
+    vf run decks/demo_deck.yaml -o out/ [--backend cpu|gpu|auto]   # run any deck (auto = gpu if taichi, else cpu)
     vf info decks/demo_deck.yaml     # validate + summarize a deck
     vf xmf out/structure.h5          # ParaView bridge (.xmf, real-nm axes)
     vf bench 256 [--backend all]     # micro-benchmark (16.7M voxels); all = cpu vs gpu
