@@ -6,6 +6,15 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **Batching GPU des petites étapes** (issue #5, piste batching) : une
+  séquence consécutive `[substrate?] + deposit mode=directional` (sans
+  `on_materials`) est fusionnée en **UN noyau** `k_stack` (un thread par
+  colonne, même sémantique que `k_substrate` + `k_dep_dir` empilés) —
+  bit-identique (contrat cpu/gpu, 95 tests OK, golden `e1316a29…` inchangé).
+  Désactivé si une étape a un `checkpoint` ou si `history:` est actif.
+  Auto-grow `nz_max` géré sur le batch. Mesuré 256³ x64 : ×1,1 ; le gain
+  vise vulkan software à 10⁸ (~0,1 s/lancement économisé par étape fusionnée).
+
 - **Sélection auto de l'arch Taichi** (issue #5, piste arch) : `VOXELFAB_TAICHI_ARCH`
   force `cuda|vulkan|x64|cpu` ; défaut `auto` = `cuda` si device CUDA détecté
   (`gpu_available`), sinon micro-bench x64 vs vulkan en **subprocess**

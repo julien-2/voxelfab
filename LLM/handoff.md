@@ -19,6 +19,10 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #5 (batching)**: séquence
+  [substrate?] + deposits directionnels consécutifs fusionnée en 1 noyau
+  `k_stack` côté gpu (bit-identique, 95 tests OK). Désactivé si checkpoint ou
+  history. Gain surtout à 10⁸ en vulkan software (~0,1 s/launch).
 - **2026-11-20** (ce PC, `main`) — **issue #5 (piste arch auto)**: sélection
   auto de l'arch Taichi — env VOXELFAB_TAICHI_ARCH pour forcer, sinon cuda si
   device CUDA, sinon micro-bench x64 vs vulkan en subprocess caché

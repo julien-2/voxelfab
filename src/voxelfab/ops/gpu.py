@@ -1123,6 +1123,37 @@ if HAS_TAICHI:
             def k_clear_flag():
                 flag[None] = 0
 
+            @ti.kernel
+            def k_stack(mats: ti.types.ndarray(ti.u8, ndim=1),
+                        ts: ti.types.ndarray(ti.i32, ndim=1),
+                        n: ti.i32, sub_mat: ti.u8, sub_t: ti.i32):
+                """Batching (issue #5) : un thread par colonne — substrat
+                depuis z=0 puis dépôts directionnels empilés depuis le sommet.
+                UN noyau pour toute la séquence, bit-identique vs étapes
+                séparées (même sémantique que k_substrate + k_dep_dir)."""
+                for i, j in h:
+                    if sub_t > 0:
+                        z1 = sub_t
+                        if z1 > nz:
+                            z1 = nz
+                        for k in range(z1):
+                            d[i, j, k] = sub_mat
+                    zt = -1
+                    for kk in range(nz):
+                        k = nz - 1 - kk
+                        if d[i, j, k] != 0:
+                            zt = k
+                            break
+                    z = zt + 1
+                    for s in range(n):
+                        if zt >= 0:
+                            z1 = z + ts[s]
+                            if z1 > nz:
+                                z1 = nz
+                            for k in range(z, z1):
+                                d[i, j, k] = mats[s]
+                            z = z1
+
             # --- CMP ----------------------------------------------------------
             @ti.kernel
             def k_cmp(target: ti.i32, stop: ti.i32):
@@ -1201,6 +1232,7 @@ if HAS_TAICHI:
                 "epi_fill": k_epi_fill,
                 "etch_crystal_fill": k_etch_crystal_fill,
                 "clear_flag": k_clear_flag,
+                "stack": k_stack,
                 "uf_init": k_uf_init,
                 "uf_topflag_clear": k_uf_topflag_clear,
                 "uf_mark_top": k_uf_mark_top,
@@ -1664,6 +1696,18 @@ if HAS_TAICHI:
         # racines des composantes qui touchent le plan top
         ctx.k["uf_mark_top"]()
         ctx.k["fill_uf_set"](material, max_z)
+
+    @register("gpu", "stack")
+    @_gpu_op
+    def stack(ctx, grid, layers, sub):
+        """Batching (issue #5) : [substrate?] + dépôts directionnels en UN
+        noyau `k_stack` (un thread par colonne). Bit-identique vs étapes
+        séparées. `layers` = [(mat_id, t_vx), ...], `sub` = (mat, t) ou None."""
+        mats = np.array([m for m, _ in layers], dtype=np.uint8)
+        ts = np.array([t for _, t in layers], dtype=np.int32)
+        sub_mat = np.uint8(sub[0]) if sub else np.uint8(0)
+        sub_t = np.int32(sub[1]) if sub else np.int32(0)
+        ctx.k["stack"](mats, ts, len(layers), sub_mat, sub_t)
 
     @register("gpu", "cmp")
     @_tile("xy")

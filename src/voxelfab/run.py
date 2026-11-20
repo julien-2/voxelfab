@@ -247,7 +247,11 @@ class DeckRunner:
             from .ops.gpu import bind_resident, release_resident
             bind_resident(self.g)
         try:
-            for i, step in enumerate(d.get("steps", []), start=1):
+            steps = list(d.get("steps", []))
+            i = 0
+            while i < len(steps):
+                step = steps[i]
+                i += 1
                 # garde : YAML 1.1 convertit les clés non cotées 'on/yes/off/no'
                 # en booléens -> erreur claire plutôt qu'un crash JSON ultérieur
                 for k in step:
@@ -255,6 +259,24 @@ class DeckRunner:
                         raise DeckError(
                             f"étape {i} : clé YAML booléenne (on/yes/off/no…) — "
                             f"écrire 'on_materials:' ou coter la clé ('on': …)")
+                # batching (issue #5) : [substrate?] + deposits directionnels
+                # consécutifs fusionnés en UN noyau côté gpu (pas de batch si
+                # checkpoint sur une étape du batch, ou history actif)
+                if self.backend == "gpu" and hw is None:
+                    batch = self._collect_batch(steps, i - 1)
+                    if batch:
+                        t0 = time.perf_counter()
+                        try:
+                            self._exec_batch(batch)
+                        except DeckError as e:
+                            raise DeckError(f"étape {i - 1} : {e}") from None
+                        except KeyError as e:
+                            raise DeckError(f"étape {i - 1} : paramètre manquant {e}") from None
+                        dt = (time.perf_counter() - t0) / len(batch)
+                        for j in range(i, i + len(batch) - 1):
+                            self.timings.append((j, steps[j - 1].get("op", "?"), dt))
+                        i += len(batch) - 1
+                        continue
                 # auto-grow nz côté hôte AVANT l'étape (backend gpu avec
                 # nz_max, mode par-op : grid.data est hôte entre les étapes)
                 if self.backend == "gpu" and self.g.nz_max is not None:
@@ -287,6 +309,56 @@ class DeckRunner:
                 hw.close()
         self.outputs()
         self.report_deck()
+
+    def _collect_batch(self, steps, i):
+        """Séquence batchable depuis l'étape i : [substrate?] puis des
+        `deposit mode=directional` sans on_materials — fusionnables en UN
+        noyau (issue #5). None si moins de 2 étapes ou checkpoint présent."""
+        batch = []
+        seen_sub = False
+        j = i
+        while j < len(steps):
+            s = steps[j]
+            if "checkpoint" in s:
+                break
+            op = s.get("op")
+            if op == "substrate" and not batch and not seen_sub:
+                batch.append(s)
+                seen_sub = True
+            elif op == "deposit" and s.get("mode", "conformal") == "directional" \
+                    and "on_materials" not in s and "on" not in s:
+                batch.append(s)
+            else:
+                break
+            j += 1
+        return batch if len(batch) >= 2 else None
+
+    def _exec_batch(self, batch):
+        """Exécute [substrate?] + dépôts directionnels : UN noyau `stack`
+        côté gpu (batching issue #5), étapes séparées côté cpu.
+        Bit-identique dans les deux cas."""
+        if self.backend != "gpu":
+            for s in batch:
+                self._exec(s)
+            return
+        layers = []
+        sub = None
+        for s in batch:
+            if s.get("op") == "substrate":
+                sub = (self._mid(s["material"]),
+                       self.g.voxels(self._thickness(s, "thickness_nm")))
+            else:
+                layers.append((self._mid(s["material"]),
+                               self.g.voxels(self._thickness(s, "thickness_nm"))))
+        if self.g.nz_max is not None:
+            base = int(self.g.height_map().max()) + 1
+            self.g.ensure_nz(base + sum(t for _, t in layers)
+                             + (sub[1] if sub else 0))
+        get_step("gpu", "stack")(self.g, layers, sub)
+        print(f"[batch] {len(batch)} étapes -> 1 noyau stack "
+              f"({'+'.join(str(s.get('op')) for s in batch)})")
+        self._log("batch " + " + ".join(str(s.get("op")) for s in batch)
+                  + f" ({len(batch)} étapes -> 1 noyau)")
 
     def _exec(self, step: dict):
         op = step.get("op")
