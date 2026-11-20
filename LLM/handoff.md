@@ -19,6 +19,13 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #11 faite (partie CPU)** :
+  substrat multicouche déclaratif `substrate:` (bottom-first, ex. SOI) exécuté
+  avant les steps ; `grid.nz_max` = auto-grow de nz (`VoxelGrid.ensure_nz`)
+  pour substrate/deposit conformal+dir/grow, sinon troncature + WARNING.
+  GPU : auto-grow non supporté (shape fixe Taichi) -> warning + troncature
+  (reste à faire sur #11). Golden `e1316a29…` inchangé, 72 tests passés
+  (`tests/test_substrate_nz.py` = 6 tests).
 - **2026-11-20** (ce PC, `main`) — **issue #10 implémentée** : specs de
   couches v2 dans `layout:` — polarité clear/dark, merge multi-datatypes
   (`gate: [10, [0,4]]`), biais local par couche (override du global).

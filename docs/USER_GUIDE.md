@@ -128,12 +128,20 @@ Deux conséquences :
 **Ce qu'on configure.**
 
 ```yaml
-grid: {pitch_nm: 2.0, nx: 120, ny: 60, nz: 64}
+grid: {pitch_nm: 2.0, nx: 120, ny: 60, nz: 64, nz_max: 512}
 ```
 
 - `pitch_nm` : la résolution physique (nm/voxel)
 - `nx, ny, nz` : la taille de la boîte de simulation en voxels — l'étendue
   simulée est `nx × pitch` nm en x, etc.
+- `nz_max` : **optionnel** — plafond d'auto-agrandissement de `nz`. Si une
+  opération (dépôt, croissance…) dépasse le haut de la grille et que
+  `nz_max` est défini, la grille s'agrandit toute seule en z (jusqu'à
+  `nz_max`, avec un message `[grid] nz auto-grow : …`). Sans `nz_max`, le
+  dépôt est **tronqué** au sommet avec un `WARNING`. En backend `gpu`,
+  l'auto-grow n'est pas supporté (champs Taichi à shape fixe) : warning au
+  démarrage et troncature. À réserver donc au CPU — prévoyez `nz` assez
+  grand sur GPU.
 
 Avec un **layout** GDS/OAS (§8), `nx`/`ny` sont ignorés : ils sont déduits
 de la bounding box du layout et du pitch. C'est donc **le pitch qui décide
@@ -172,9 +180,12 @@ grid:                           # obligatoire (ou un layout, §8)
   nx: 120
   ny: 60
   nz: 64
+  # nz_max: 512                  # optionnel : auto-grow de nz si une op déborde (CPU)
 materials:                      # noms -> couleur
   Si:   {color: '#4d79ff'}
   SiO2: {color: '#c9c9c9'}
+# substrate:                    # optionnel : substrat multicouche, avant les steps (§4.2b)
+#   - {material: Si, thickness_nm: 40}
 layout:                         # optionnel : masques depuis GDS/OAS (§8)
   file: inv.gds
   cell: TOP
@@ -191,6 +202,25 @@ outputs:                        # h5 | views | vtk | stl | report
 verticaux (`target_z`, `to_plane_z`) sont en **index de voxel** car ils
 sont lus directement sur la géométrie (voir §4.1). Les matériaux sont
 toujours référencés par nom.
+
+### 4.2b Le substrat multicouche (déclaratif, ex. SOI)
+
+Plutôt que l'étape `substrate` (qui remplit depuis `z=0`), déclarez le
+substrat complet **avant** les étapes, ordre **bottom-first** (le premier
+élément est le fond de la grille, `z = 0`) :
+
+```yaml
+substrate:
+  - {material: Si,   thickness_nm: 500}   # handle wafer (fond, z=0)
+  - {material: SiO2, thickness_nm: 145}   # BOX (buried oxide)
+  - {material: Si,   thickness_nm: 40}    # film mince SOI (top)
+```
+
+- exécuté automatiquement **avant** `steps`, dans l'ordre donné ;
+- l'épaisseur totale doit tenir dans `nz` (ou `nz_max`, qui fait grandir la
+  grille — voir §4.1), sinon erreur claire avec les deux valeurs en nm ;
+- les deux formes coexistent : `substrate:` (recommandé) et
+  `{op: substrate, ...}` dans `steps` (rétrocompatible).
 
 ### 4.3 Les étapes (`steps`)
 

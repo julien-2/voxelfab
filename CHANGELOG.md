@@ -6,6 +6,21 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **Substrat multicouche déclaratif + `nz` auto-extensible** (issue #11, CPU) :
+  - nouveau bloc `substrate:` exécuté avant `steps`, ordre bottom-first
+    (ex. SOI : handle Si / BOX SiO2 / top Si) ; erreur claire si l'épaisseur
+    totale dépasse `nz`/`nz_max` ;
+  - `grid.nz_max` optionnel : si une op déborde en z (substrate, deposit
+    conformal/directionnel, grow), la grille s'agrandit toute seule
+    (`VoxelGrid.ensure_nz`, `nz` doublé jusqu'à `nz_max`, message
+    `[grid] nz auto-grow`) ; sans `nz_max`, troncature au sommet avec
+    `WARNING` (comportement v0.2.2, mais désormais signalé). En backend
+    `gpu` l'auto-grow n'est pas supporté (champs Taichi à shape fixe) :
+    warning au démarrage, troncature — sous-issue restant sur #11.
+  - `{op: substrate}` dans `steps` inchangé (rétrocompatible), golden
+    `e1316a29…` inchangé. Tests : `tests/test_substrate_nz.py` (6 tests).
+    72 passed.
+
 - **Specs de couches v2 dans le bloc `layout:`** (issue #10) :
   polarité **clear/dark** (`polarity: clear` = complémentaire imprimé dans la
   résine, appliqué après merge), **merge multi-datatypes**

@@ -42,15 +42,43 @@ class VoxelGrid:
     `pitch` = nm par voxel ; les étapes parlent en nm, les ops en voxels.
     """
 
-    def __init__(self, nx: int, ny: int, nz: int, pitch: float = 1.0):
+    def __init__(self, nx: int, ny: int, nz: int, pitch: float = 1.0,
+                 nz_max: int | None = None):
         self.nx, self.ny, self.nz = nx, ny, nz
         self.pitch = pitch
+        self.nz_max = nz_max          # None = pas d'auto-grow (clip + warning)
+        self._warned_overflow = False
         self.data = np.zeros((nx, ny, nz), dtype=np.uint8)
         self.materials = Materials()
         # index de colonnes, alloués une seule fois et réutilisés
         self._xs = np.arange(nx)[:, None]        # (nx, 1)
         self._ys = np.arange(ny)[None, :]        # (1, ny)
         self._zs = np.arange(nz)[None, None, :]  # (1, 1, nz)
+
+    def ensure_nz(self, z_needed: int) -> bool:
+        """Agrandit la grille en z si `z_needed` > nz (auto-grow, requiert
+        `nz_max`). Retourne True si `z_needed` est couvert (déjà le cas ou
+        grandi jusqu'à nz_max) ; False si tronqué — un warning est alors émis
+        une seule fois et l'appelant tronque (clip)."""
+        if z_needed <= self.nz:
+            return True
+        if self.nz_max is not None and self.nz < self.nz_max:
+            old = self.nz
+            new_nz = min(max(z_needed, 2 * self.nz), self.nz_max)
+            pad = np.zeros((self.nx, self.ny, new_nz - self.nz), dtype=np.uint8)
+            self.data = np.concatenate([self.data, pad], axis=2)
+            self.nz = new_nz
+            self._zs = np.arange(new_nz)[None, None, :]
+            print(f"[grid] nz auto-grow : {old} -> {new_nz} "
+                  f"(nz_max={self.nz_max})")
+        if z_needed > self.nz:
+            if not self._warned_overflow:
+                self._warned_overflow = True
+                print(f"[grid] WARNING : besoin de z={z_needed} > nz={self.nz} "
+                      f"(nz_max={self.nz_max}) — tronqué. Augmentez nz ou "
+                      "définissez grid.nz_max pour l'auto-grow.")
+            return False
+        return True
 
     # --- helpers -----------------------------------------------------------
 
@@ -96,7 +124,8 @@ class VoxelGrid:
         }
 
     def copy(self) -> "VoxelGrid":
-        g = VoxelGrid(self.nx, self.ny, self.nz, self.pitch)
+        g = VoxelGrid(self.nx, self.ny, self.nz, self.pitch,
+                      nz_max=self.nz_max)
         g.data = self.data.copy()
         g.materials = self.materials
         return g

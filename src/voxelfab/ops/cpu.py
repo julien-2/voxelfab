@@ -223,6 +223,8 @@ def _etch_selective_fallback(grid, budget, rates_lut, open_mask,
 
 @register("cpu", "substrate")
 def substrate(grid, material, t):
+    if t > grid.nz:
+        grid.ensure_nz(t)      # auto-grow si nz_max, sinon warning + clip
     grid.data[:, :, :t] = material
 
 
@@ -230,6 +232,10 @@ def substrate(grid, material, t):
 def deposit_conformal(grid, material, t, on_materials=None):
     if t == 0:
         return
+    hm = grid.height_map()
+    if hm.size and hm.max() >= 0:
+        # auto-grow AVANT solid() : ensure_nz réalloue data et _zs
+        grid.ensure_nz(int(hm.max()) + t + 1)
     solid = grid.solid()
     shell = _dilate(solid, t) & ~solid
     grid.data[shell] = material
@@ -245,8 +251,10 @@ def deposit_directional(grid, material, t, on_materials=None):
         # LUT indexée par le matériau du sommet : pas de masque 3D
         top_mat = grid.data[grid._xs, grid._ys, np.clip(h, 0, grid.nz - 1)]
         active &= _allowed_lut(on_materials)[top_mat]
+    z1f = h + 1 + t
+    grid.ensure_nz(int(z1f.max()))     # auto-grow (réalloue data et _zs)
     z0 = np.clip(h + 1, 0, grid.nz)[..., None]
-    z1 = np.clip(h + 1 + t, 0, grid.nz)[..., None]
+    z1 = np.clip(z1f, 0, grid.nz)[..., None]
     shell = active[..., None] & (grid._zs >= z0) & (grid._zs < z1)
     grid.data[shell] = material
 
@@ -338,6 +346,10 @@ def grow(grid, depth, from_id, product_id, expansion=1.0, into=None,
     colonne (le cumul par colonne alloue un int32 temporaire, comme fill)."""
     if depth <= 0 or expansion <= 0:
         return
+    if expansion > 1.0:
+        # croissance verticale possible de d2 : auto-grow AVANT de prendre
+        # la référence data (ensure_nz réalloue data et _zs)
+        grid.ensure_nz(grid.nz + int(round(depth * (float(expansion) - 1.0))))
     data = grid.data
     react = data == Materials.AIR
     if into:

@@ -120,6 +120,8 @@ class DeckRunner:
         pitch = float(gr.get("pitch_nm", 1.0))
         nx, ny, nz = int(gr.get("nx", 0)), int(gr.get("ny", 0)), \
             int(gr.get("nz", 0))
+        # nz_max optionnel : auto-grow de nz si une op déborde (issue #11)
+        nz_max = int(gr["nz_max"]) if gr.get("nz_max") else None
 
         # layout optionnel : la grille est déduite de la bbox
         lay = d.get("layout")
@@ -127,7 +129,7 @@ class DeckRunner:
             bbox, layers_found = layout_info(lay["file"], lay.get("cell"))
             print(f"[layout] {lay['file']} bbox={bbox} µm couches={layers_found}")
             nx, ny = grid_size_for(bbox, pitch)
-            self.g = VoxelGrid(nx, ny, nz, pitch=pitch)
+            self.g = VoxelGrid(nx, ny, nz, pitch=pitch, nz_max=nz_max)
             # layers: {nom: [layer, datatype]} (v1) ou
             #         {nom: {ld: ..., polarity: dark|clear, bias_nm: ...}}
             # -> merge multi-datatypes, polarité clear/dark, biais par couche
@@ -141,11 +143,41 @@ class DeckRunner:
         else:
             if nx <= 0 or ny <= 0 or nz <= 0:
                 raise DeckError("grid: nx/ny/nz requis (ou un layout)")
-            self.g = VoxelGrid(nx, ny, nz, pitch=pitch)
+            self.g = VoxelGrid(nx, ny, nz, pitch=pitch, nz_max=nz_max)
 
         # matériaux
         for name, m in d.get("materials", {}).items():
             self.mat[name] = self.g.add_material(name, m.get("color", "#888888"))
+
+        # substrat multicouche déclaratif (issue #11) : exécuté AVANT les
+        # étapes, ordre bottom-first (premier élément = fond, z = 0).
+        # Ex. SOI : [{material: Si, thickness_nm: 500},   # handle
+        #           {material: SiO2, thickness_nm: 145},  # BOX
+        #           {material: Si, thickness_nm: 40}]      # top Si
+        sub = d.get("substrate")
+        if sub:
+            if not isinstance(sub, list) or not sub:
+                raise DeckError("'substrate:' doit être une liste non vide "
+                                "de {material, thickness_nm}")
+            z = 0
+            for i, layer in enumerate(sub, 1):
+                mat = layer.get("material") if isinstance(layer, dict) else None
+                if mat not in self.mat:
+                    raise DeckError(f"substrate couche {i} : matériau {mat!r} "
+                                    f"inconnu (materials: {sorted(self.mat)})")
+                th = float(layer.get("thickness_nm", 0.0))
+                t = self.g.voxels(th)
+                if t <= 0:
+                    raise DeckError(f"substrate couche {i} ({mat}) : "
+                                    "thickness_nm > 0 requis")
+                if not self.g.ensure_nz(z + t):
+                    raise DeckError(
+                        f"substrate : l'épaisseur totale ({(z + t) * self.g.pitch:.0f} nm) "
+                        f"dépasse nz*pitch ({self.g.nz * self.g.pitch:.0f} nm, "
+                        f"nz_max={self.g.nz_max}) — augmentez nz ou nz_max")
+                self.g.data[:, :, z:z + t] = self.mat[mat]
+                self._log(f"substrate {mat} ({t} vx, z {z}..{z + t - 1})")
+                z += t
 
     # --- exécution ---------------------------------------------------------
 
@@ -157,6 +189,10 @@ class DeckRunner:
         # sortie (juste avant les exports), soit ~2×N octets de PCIe en moins
         # par étape. Voir ops/gpu.py (bind_resident/release_resident).
         resident = self.backend == "gpu"
+        if resident and self.g.nz_max is not None:
+            print("[grid] WARNING : nz_max (auto-grow) non supporté en backend "
+                  "gpu — champs Taichi à shape fixe ; les dépôts au-delà de "
+                  f"nz={self.g.nz} seront tronqués")
         if resident:
             from .ops.gpu import bind_resident, release_resident
             bind_resident(self.g)
