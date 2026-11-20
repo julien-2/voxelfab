@@ -19,6 +19,13 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — issues d'amélioration ouvertes :
+  [#8](https://github.com/julien-2/voxelfab/issues/8) deck YAML hiérarchisé
+  Route > Module > Opérations > steps (process flow multi-fab, contenu à
+  détailler ensemble) ; [#9](https://github.com/julien-2/voxelfab/issues/9)
+  un seul fichier de sauvegarde de toutes les étapes du procédé, taille
+  minimale (pistes : deltas de voxels, HDF5 chaîné par étape, niveaux de
+  détail).
 - **2026-11-20** (ce PC, `main`) — raffinement de `--backend auto` :
   `auto` -> `gpu` seulement si un **device CUDA est détecté**
   (`gpu_available()` = sonde `cuInit`/`cuDeviceGetCount` via ctypes, sans
