@@ -169,6 +169,11 @@ backend must reproduce them voxel-for-voxel.
 - `ops/base.py` — registry: `(op, mode) → implementation`, per backend.
 - `ops/cpu.py` — today's vectorized SciPy/Numba kernel (already written).
 - `ops/gpu.py` — Taichi port. Same signatures, `ti.field`-backed.
+  Arch selection (issue #5): `VOXELFAB_TAICHI_ARCH` forces
+  `cuda|vulkan|x64|cpu`; default `auto` = `cuda` if a CUDA device is
+  detected (`gpu_available`, cuInit/cuDeviceGetCount probe), else a
+  subprocess micro-bench picks the fastest of x64/vulkan (result cached in
+  `~/.voxelfab/arch_cache.json`, `VOXELFAB_ARCH_CACHE=0` to re-measure).
 
 ### Taichi design notes
 

@@ -587,11 +587,12 @@ Notes :
 ## 5. CLI — référence
 
 ```
-vf run deck.yaml [-o OUTDIR] [--backend cpu]
+vf run deck.yaml [-o OUTDIR] [--backend cpu|gpu|auto]
 vf info deck.yaml
-vf demo [-o OUTDIR]
-vf bench [N]                    # micro-benchmark sur grille N³ (défaut 256)
+vf demo [-o OUTDIR] [--backend cpu|gpu|auto]
+vf bench [N] [--backend all|cpu|gpu|auto]
 vf xmf [FICHIER]                # pont ParaView : structure.h5 -> structure.xmf
+vf history FICHIER [--step K] [-o OUTDIR] [--format h5|png|vtk]
 ```
 
 - `vf run` : exécute le deck ; `-o` définit le répertoire des sorties
@@ -603,8 +604,14 @@ vf xmf [FICHIER]                # pont ParaView : structure.h5 -> structure.xmf
 - `vf xmf` : écrit le pont Xdmf à côté d'un `structure.h5` pour
   l'ouvrir dans ParaView en nanomètres réels (§6.4) — défaut
   `structure.h5`.
-- `--backend` : réservé au backend GPU (v0.2) ; `cpu` est la seule valeur
-  aujourd'hui.
+- `--backend` : `cpu` (défaut), `gpu` (Taichi, extra `[gpu]`), ou `auto`
+  (= `gpu` si un device CUDA est détecté, sinon `cpu`). Le backend effectif
+  est journalisé dans `report.json`/HDF5.
+- **Variables d'env GPU** : `VOXELFAB_TAICHI_ARCH=cuda|vulkan|x64|cpu` force
+  l'arch Taichi (défaut `auto` : `cuda` si device CUDA, sinon micro-bench
+  x64 vs vulkan caché dans `~/.voxelfab/arch_cache.json`, désactivable avec
+  `VOXELFAB_ARCH_CACHE=0`) ; `VOXELFAB_GPU_VRAM_BYTES=<octets>` force le
+  budget VRAM (tiling) ; `VOXELFAB_FORCE_TILED=1` force le mode tuilé.
 
 Codes de sortie : `0` succès, `2` erreur de deck (message explicite).
 

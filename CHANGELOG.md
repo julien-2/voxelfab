@@ -6,6 +6,15 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **Sélection auto de l'arch Taichi** (issue #5, piste arch) : `VOXELFAB_TAICHI_ARCH`
+  force `cuda|vulkan|x64|cpu` ; défaut `auto` = `cuda` si device CUDA détecté
+  (`gpu_available`), sinon micro-bench x64 vs vulkan en **subprocess**
+  (ti.init non réinitialisable in-process ; noyau dans un vrai fichier .py),
+  résultat caché dans `~/.voxelfab/arch_cache.json` (`VOXELFAB_ARCH_CACHE=0`
+  pour re-mesurer). Sur ce PC le bench a choisi `vulkan`. Tests :
+  `tests/test_arch_select.py` (4 tests). 91 passed. Piste restante sur #5 :
+  batching des petites étapes en un seul noyau.
+
 - **perf(gpu): `fill` en union-find GPU** (issue #3, O(N) au lieu de O(P·N)) :
   labélisation des composantes d'air 6-connexes par `atomic_min` +
   compression de chemins (`k_uf_pass`/`k_uf_compress`, nouveaux champs

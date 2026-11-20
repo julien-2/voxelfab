@@ -19,6 +19,12 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #5 (piste arch auto)**: sélection
+  auto de l'arch Taichi — env VOXELFAB_TAICHI_ARCH pour forcer, sinon cuda si
+  device CUDA, sinon micro-bench x64 vs vulkan en subprocess caché
+  (~/.voxelfab/arch_cache.json). Ici : a choisi **vulkan**. Piège trouvé :
+  ti.__version__ est une liste [1,7,4] -> cache jamais hit, fixé.
+  91 tests passés (tests/test_arch_select.py). Reste sur #5 : batching.
 - **2026-11-20** (ce PC, `main`) — **issue #3 (piste 2, union-find)**:
   `fill` GPU remplacé par un union-find (atomic_min + path compression,
   champs lbl i32 3D + topflag u8 1D) — bit-identique vs ndimage.label CPU.

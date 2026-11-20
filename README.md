@@ -51,6 +51,12 @@ steps, layouts in, 3D structures and virtual metrology out.
     vf xmf out/structure.h5          # ParaView bridge (.xmf, real-nm axes)
     vf bench 256 [--backend all]     # micro-benchmark (16.7M voxels); all = cpu vs gpu
 
+Backend GPU (Taichi) : l'arch est choisie automatiquement — `cuda` si un
+device CUDA est détecté, sinon micro-bench x64 vs vulkan (caché dans
+`~/.voxelfab/arch_cache.json`). Forcer avec `VOXELFAB_TAICHI_ARCH=cuda|vulkan|x64|cpu`,
+désactiver le cache avec `VOXELFAB_ARCH_CACHE=0`. Autres env : `VOXELFAB_GPU_VRAM_BYTES`,
+`VOXELFAB_FORCE_TILED=1`.
+
 Outputs land in the output directory: `structure.h5` (the 3D structure +
 provenance), `mos3d.png` (top view + cross-sections), `report.json`
 (metrology + provenance + `structure_sha256`).

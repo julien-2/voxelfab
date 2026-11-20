@@ -87,18 +87,128 @@ def _lut_u8(lut_bool: np.ndarray) -> np.ndarray:
 
 _INIT = False
 
+# Micro-bench d'une arch Taichi, exécuté en SUBPROCESS (ti.init n'est pas
+# réinitialisable dans le process courant, et les noyaux Taichi exigent un
+# vrai fichier .py — d'où le fichier temporaire). Le noyau fait un vrai
+# calcul (sinon optimisé away) sur 128³, 3 itérations chronométrées.
+_ARCH_BENCH_SRC = '''
+import sys, time
+import taichi as ti
+arch_name = sys.argv[1]
+arch = {"x64": ti.x64, "cpu": ti.cpu, "vulkan": ti.vulkan, "cuda": ti.cuda}[arch_name]
+try:
+    ti.init(arch=arch, default_fp=ti.f64, default_ip=ti.i32, offline_cache=True)
+except Exception:
+    print("inf")
+    sys.exit(0)
+f = ti.field(ti.u8, shape=(128, 128, 128))
+@ti.kernel
+def k():
+    for i, j, kk in f:
+        f[i, j, kk] = ti.cast((i * 7 + j * 13 + kk * 29) % 251, ti.u8)
+k()
+ti.sync()
+t0 = time.perf_counter()
+for _ in range(3):
+    k()
+ti.sync()
+print(f"{time.perf_counter() - t0:.4f}")
+'''
+
+
+def _bench_arch(arch_name: str) -> float:
+    """Temps (s) du micro-bench d'une arch Taichi en subprocess ; inf si
+    l'arch échoue (non supportée sur cette machine)."""
+    import subprocess
+    import sys
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
+        f.write(_ARCH_BENCH_SRC)
+        path = f.name
+    try:
+        out = subprocess.run([sys.executable, path, arch_name],
+                             capture_output=True, text=True, timeout=120)
+        return float(out.stdout.strip().splitlines()[-1])
+    except Exception:
+        return float("inf")
+    finally:
+        os.unlink(path)
+
+
+_ARCH_MAP = None
+
+
+def _select_arch():
+    """Arch Taichi effective (issue #5).
+
+    - env `VOXELFAB_TAICHI_ARCH` = cuda|vulkan|x64|cpu pour forcer ;
+    - défaut `auto` : `cuda` si un device CUDA est détecté (gpu_available),
+      sinon micro-bench x64 vs vulkan en subprocess, résultat mis en cache
+      dans ~/.voxelfab/arch_cache.json (VOXELFAB_ARCH_CACHE=0 pour
+      désactiver le cache et re-mesurer).
+    """
+    global _ARCH_MAP
+    if _ARCH_MAP is None:
+        _ARCH_MAP = {"cuda": ti.cuda, "vulkan": ti.vulkan,
+                     "x64": ti.x64, "cpu": ti.cpu}
+    # ti.__version__ peut être une liste [1, 7, 4] selon les versions
+    tv = ti.__version__ if isinstance(ti.__version__, str) \
+        else ".".join(map(str, ti.__version__))
+    env = os.environ.get("VOXELFAB_TAICHI_ARCH", "auto").strip().lower()
+    if env and env != "auto":
+        if env not in _ARCH_MAP:
+            raise ValueError(f"VOXELFAB_TAICHI_ARCH={env!r} invalide "
+                             "(cuda|vulkan|x64|cpu|auto)")
+        return _ARCH_MAP[env]
+    if gpu_available():
+        return ti.cuda
+    # cache du micro-bench ?
+    if os.environ.get("VOXELFAB_ARCH_CACHE", "1") != "0":
+        try:
+            import json
+            from pathlib import Path
+            p = Path.home() / ".voxelfab" / "arch_cache.json"
+            if p.exists():
+                cache = json.loads(p.read_text())
+                if cache.get("taichi") == tv and cache.get("arch") in _ARCH_MAP:
+                    return _ARCH_MAP[cache["arch"]]
+        except Exception:
+            pass
+    # micro-bench x64 vs vulkan
+    cands = ["x64"]
+    if hasattr(ti, "vulkan"):
+        cands.append("vulkan")
+    best, best_t = "cpu", float("inf")
+    for c in cands:
+        t = _bench_arch(c)
+        print(f"[gpu] micro-bench arch {c}: {t:.3f}s")
+        if t < best_t:
+            best, best_t = c, t
+    try:
+        import json
+        from pathlib import Path
+        p = Path.home() / ".voxelfab" / "arch_cache.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"taichi": tv, "arch": best}))
+    except Exception:
+        pass
+    return _ARCH_MAP[best]
+
 
 def _ensure_init():
     global _INIT
     if _INIT:
         return
+    arch = _select_arch()
     try:
-        ti.init(arch=ti.cuda, default_fp=ti.f64, default_ip=ti.i32,
+        ti.init(arch=arch, default_fp=ti.f64, default_ip=ti.i32,
                 offline_cache=True)
     except Exception:
+        arch = ti.cpu
         ti.init(arch=ti.cpu, default_fp=ti.f64, default_ip=ti.i32,
                 offline_cache=True)
     _INIT = True
+    print(f"[gpu] Taichi arch = {arch}")
 
 
 _CUDA_DEVICES = None
