@@ -751,16 +751,46 @@ layout:
     active:     {ld: [10, [0, 4]], polarity: dark, bias_nm: -5.0}  # biais local (override)
 ```
 
-Spec de couche — deux formes :
+Spec de couche — formes acceptées :
 
-- **liste** `[layer, datatype]` (rétrocompatible v1), ou `[layer, [dt1, dt2]]`
-  (union des datatypes), ou `[[l1, dt1], [l2, dt2]]` (union de couches) ;
-- **dict** `{ld: ..., polarity: dark|clear, bias_nm: ...}` :
-  - `ld` comme ci-dessus ;
-  - `polarity: dark` (défaut) = le masque imprime son motif tel que dessiné ;
-    `polarity: clear` = c'est le **complémentaire** qui est imprimé dans la
-    résine (champ clear) — appliqué après le merge des datatypes ;
-  - `bias_nm` local, prioritaire sur le `bias_nm` global du bloc `layout`.
+| Forme | Exemple | Signification |
+|---|---|---|
+| `[layer, datatype]` | `[10, 0]` | forme v1 (rétrocompatible) : couche (10,0), `dark`, biais global |
+| `[layer, [dt…]]` | `[10, [0, 4]]` | **merge** des datatypes 0 et 4 du layer 10 |
+| `[[l, dt], …]` | `[[20, 0], [21, 0]]` | **merge** de plusieurs paires (layer, datatype) |
+| dict | `{ld: [99, 0], polarity: clear, bias_nm: -5}` | voir ci-dessous |
+
+La forme **dict** accepte trois champs (tous optionnels sauf `ld`) :
+
+- `ld` : une des formes liste ci-dessus ;
+- `polarity` : `"dark"` (défaut) ou `"clear"` ;
+- `bias_nm` : biais **local** de cette couche, prioritaire sur le `bias_nm`
+  global du bloc `layout`.
+
+**Polarité clear/dark** — c'est la polarité du masque en fabrication :
+
+- `dark` : le masque imprime son motif **tel que dessiné** dans le GDS/OAS ;
+- `clear` : c'est le **complémentaire** du motif dessiné qui est imprimé
+  dans la résine (champ transparent, typique résine positive). Le masque
+  utilisé par les étapes est alors l'inverse du polygone : `mask == ~motif`.
+
+La polarité s'applique **après** le merge des datatypes/couches (elle porte
+sur la couche logique entière, pas par datatype).
+
+**Exemple d'usage** — inverseur avec champ clear et grille poly multi-datatypes :
+
+```yaml
+layout:
+  file: inv.gds
+  bias_nm: -2.0                 # biais global (compensation gravure latérale)
+  layers:
+    active:  {ld: [10, [0, 4]], polarity: dark,  bias_nm: -5.0}  # poly : dt 0 + dt 4
+    field:   {ld: [99, 0],       polarity: clear}                # champ clear
+    contact: [20, 0]                                              # v1, dark, biais -2
+steps:
+  - {op: etch, depth_nm: 60, until: Si, mask: {layer: active}}
+  - {op: etch, depth_nm: 30, mask: {invert: {layer: contact}}}
+```
 
 Comportement :
 
