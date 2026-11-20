@@ -742,13 +742,25 @@ masques géométriques :
 layout:
   file: inv.gds          # .gds / .gds.gz / .oas
   cell: TOP              # cellule ; absent = première top-cell
-  bias_nm: -2.0          # biais de masque : + élargit, - rétrécit (nm)
-  layers:                # nom logique -> (layer, datatype)
-    sti:        [1, 0]
-    gate:       [10, 0]
-    contact_s:  [20, 0]
-    contact_d:  [21, 0]
+  bias_nm: -2.0          # biais GLOBAL (défaut de chaque couche) : + élargit, - rétrécit (nm)
+  layers:                # nom logique -> spec de couche
+    sti:        [1, 0]                          # v1 : (layer, datatype), polarity dark
+    gate:       [10, [0, 4]]                    # merge des datatypes 0 et 4 du layer 10
+    contacts:   [[20, 0], [21, 0]]              # merge de plusieurs (layer, datatype)
+    field:      {ld: [99, 0], polarity: clear}  # champ clear : imprime le COMPLÉMENTAIRE
+    active:     {ld: [10, [0, 4]], polarity: dark, bias_nm: -5.0}  # biais local (override)
 ```
+
+Spec de couche — deux formes :
+
+- **liste** `[layer, datatype]` (rétrocompatible v1), ou `[layer, [dt1, dt2]]`
+  (union des datatypes), ou `[[l1, dt1], [l2, dt2]]` (union de couches) ;
+- **dict** `{ld: ..., polarity: dark|clear, bias_nm: ...}` :
+  - `ld` comme ci-dessus ;
+  - `polarity: dark` (défaut) = le masque imprime son motif tel que dessiné ;
+    `polarity: clear` = c'est le **complémentaire** qui est imprimé dans la
+    résine (champ clear) — appliqué après le merge des datatypes ;
+  - `bias_nm` local, prioritaire sur le `bias_nm` global du bloc `layout`.
 
 Comportement :
 
@@ -758,7 +770,10 @@ Comportement :
   garanti par construction) ;
 - les références SREF/AREF sont aplaties ; les FlexPath/RobustPath sont
   convertis en polygones (avertissement sinon) ;
-- `bias_nm` compense la gravure latérale (via `shapely.buffer`) ;
+- `bias_nm` (global ou local) compense la gravure latérale
+  (via `shapely.buffer`, appliqué par couche avant rastérisation) ;
+- un même `(layer, datatype)` partagé par deux couches logiques doit avoir
+  le **même biais**, sinon erreur ;
 - avertissement si une couche demandée est absente ou rasterise vide
   (grille trop grossière).
 

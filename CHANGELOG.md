@@ -6,6 +6,17 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **Specs de couches v2 dans le bloc `layout:`** (issue #10) :
+  polarité **clear/dark** (`polarity: clear` = complémentaire imprimé dans la
+  résine, appliqué après merge), **merge multi-datatypes**
+  (`gate: [10, [0, 4]]`, ou `[[20, 0], [21, 0]]`), **biais individuel**
+  (`bias_nm` local prioritaire sur le global). Format v1
+  (`layers: {nom: [layer, datatype]}`) inchangé et rétrocompatible — golden
+  `e1316a29…` inchangé. `layout.py` : `parse_layer_spec` +
+  `layer_masks_from_layout` ; `masks_from_layout` accepte un dict de biais
+  par `(layer, datatype)`. Fix compat gdstk 1.x (`lib.top_level()`).
+  Tests : `tests/test_layout.py` (10 tests, mini GDS gdstk). 66 passed.
+
 - **`--backend auto` implémenté** (`vf run` / `vf demo`, cf. ARCHITECTURE.md
   §5 « Backend selection ») : `ops.resolve_backend('auto')` -> `gpu` si
   taichi est installé **et** qu'un device CUDA est détecté

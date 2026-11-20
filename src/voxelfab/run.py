@@ -19,7 +19,7 @@ import numpy as np
 from ._version import __version__
 from .deck import DeckError
 from .grid import VoxelGrid
-from .layout import grid_size_for, layout_info, masks_from_layout
+from .layout import grid_size_for, layout_info, layer_masks_from_layout
 from .masks import mask_bands, mask_rectangle
 from .metro import Metrology
 from .ops import get_step, resolve_backend
@@ -128,14 +128,16 @@ class DeckRunner:
             print(f"[layout] {lay['file']} bbox={bbox} µm couches={layers_found}")
             nx, ny = grid_size_for(bbox, pitch)
             self.g = VoxelGrid(nx, ny, nz, pitch=pitch)
-            wanted = tuple((int(l), int(dt))
-                           for l, dt in lay.get("layers", {}).values())
-            masks = masks_from_layout(lay["file"], self.g, layers=wanted,
-                                      bbox=bbox, cell_name=lay.get("cell"),
-                                      bias_nm=float(lay.get("bias_nm", 0.0)))
-            names = lay.get("layers", {})
-            self.layer_masks = {name: masks[(int(l), int(dt))]
-                                for name, (l, dt) in names.items()}
+            # layers: {nom: [layer, datatype]} (v1) ou
+            #         {nom: {ld: ..., polarity: dark|clear, bias_nm: ...}}
+            # -> merge multi-datatypes, polarité clear/dark, biais par couche
+            try:
+                self.layer_masks = layer_masks_from_layout(
+                    lay["file"], self.g, lay.get("layers", {}),
+                    cell_name=lay.get("cell"), bbox=bbox,
+                    bias_nm=float(lay.get("bias_nm", 0.0)))
+            except ValueError as e:
+                raise DeckError(f"layout: {e}") from None
         else:
             if nx <= 0 or ny <= 0 or nz <= 0:
                 raise DeckError("grid: nx/ny/nz requis (ou un layout)")

@@ -31,7 +31,10 @@ def _read_layout(filename: str, cell_name: str | None = None):
     else:
         raise ValueError("format non reconnu : .gds ou .oas attendu")
     if cell_name is None:
-        cell = lib.top_cells()[0]
+        # gdstk >= 1.0 : top_level() ; avant : top_cells()
+        tops = (lib.top_level() if hasattr(lib, "top_level")
+                else lib.top_cells())
+        cell = tops[0]
     else:
         cell = {c.name: c for c in lib.cells}[cell_name]
     cell.flatten()
@@ -71,7 +74,9 @@ def masks_from_layout(filename: str, grid: VoxelGrid,
     bbox      : région d'intérêt ((x0, y0), (x1, y1)) en µm ;
                 None = bounding box de la cellule
     bias_nm   : biais de masque : élargit (+) / rétrécit (-) les polygones
-                (compensation de la gravure latérale), via shapely.buffer
+                (compensation de la gravure latérale), via shapely.buffer.
+                Accepte un float (toutes les couches) OU un dict
+                {(layer, datatype): float} pour un biais par couche.
     evenodd   : True = règle even-odd (les polygones imbriqués deviennent
                 des trous, convention GDS pour les openings) ; False =
                 union simple. Chaque couche retournée est alors le XOR
@@ -121,8 +126,9 @@ def masks_from_layout(filename: str, grid: VoxelGrid,
             geom = reduce(operator.xor, geoms)       # XOR = even-odd
         else:
             geom = shapely.union_all(geoms)
-        if bias_nm:
-            geom = geom.buffer(bias_nm * 1e-3)
+        b = bias_nm.get(key, 0.0) if isinstance(bias_nm, dict) else bias_nm
+        if b:
+            geom = geom.buffer(b * 1e-3)
         shapely.prepare(geom)
         m = shapely.contains_xy(geom, X.ravel(), Y.ravel())
         m = m.reshape(grid.nx, grid.ny)
@@ -133,3 +139,101 @@ def masks_from_layout(filename: str, grid: VoxelGrid,
     for key in (wanted or set()) - set(by_layer):
         print(f"  [gds] ATTENTION couche {key} absente du layout")
     return masks
+
+
+def _norm_ld(ld) -> list:
+    """Normalise le champ `ld` d'une spec de couche en liste de (layer,
+    datatype) :
+      [10, 0]            -> [(10, 0)]
+      [10, [0, 4]]       -> [(10, 0), (10, 4)]   (merge de datatypes)
+      [[10, 0], [11, 2]] -> [(10, 0), (11, 2)]   (merge de couches)
+    """
+    if isinstance(ld, (list, tuple)) and ld and isinstance(ld[0], (list, tuple)):
+        pairs = list(ld)                                 # [[l, dt], ...]
+    elif isinstance(ld, (list, tuple)) and len(ld) == 2:
+        layer, dt = ld
+        pairs = [(layer, d) for d in dt] if isinstance(dt, (list, tuple)) \
+            else [(layer, dt)]
+    else:
+        raise ValueError(f"ld invalide : {ld!r} (attendu [layer, datatype], "
+                         "[layer, [datatypes]] ou [[layer, datatype], ...])")
+    try:
+        out = [(int(l), int(d)) for l, d in pairs]
+    except (TypeError, ValueError):
+        raise ValueError(f"ld invalide : {ld!r} (layer/datatype entiers "
+                         "attendus)") from None
+    if not out:
+        raise ValueError("ld invalide : aucune paire (layer, datatype)")
+    return out
+
+
+def parse_layer_spec(name, spec, default_bias: float = 0.0) -> dict:
+    """Normalise une spec de couche du bloc `layout: layers:` (rétrocompatible).
+
+      gate: [10, 0]                                        (format v1)
+      gate: [10, [0, 4]]                                   (merge datatypes)
+      gate: {ld: [10, [0, 4]], polarity: clear, bias_nm: -5}
+
+    Retour : {"ld": [(layer, datatype), ...],
+              "polarity": "dark" | "clear",
+              "bias_nm": float}
+    - polarity "dark" (défaut) : le masque imprime le motif tel que dessiné ;
+      "clear" : c'est le complémentaire qui est imprimé dans la résine.
+    - bias_nm local ; par défaut le biais global du bloc layout.
+    """
+    if isinstance(spec, dict):
+        if "ld" not in spec:
+            raise ValueError(f"couche {name!r} : champ 'ld' requis dans {spec!r}")
+        ld = _norm_ld(spec["ld"])
+        polarity = str(spec.get("polarity", "dark")).lower()
+        if polarity not in ("dark", "clear"):
+            raise ValueError(f"couche {name!r} : polarity {polarity!r} invalide "
+                             "(dark | clear)")
+        bias = float(spec.get("bias_nm", default_bias))
+    else:
+        ld = _norm_ld(spec)
+        polarity = "dark"
+        bias = float(default_bias)
+    return {"ld": ld, "polarity": polarity, "bias_nm": bias}
+
+
+def layer_masks_from_layout(filename: str, grid: VoxelGrid, layers: dict,
+                            cell_name: str | None = None,
+                            bbox: tuple | None = None,
+                            bias_nm: float = 0.0,
+                            evenodd: bool = False) -> dict:
+    """Masques nommés depuis un layout, avec polarité et biais par couche.
+
+    layers : {nom_logique: spec} — spec = [layer, datatype] (v1) ou
+             {ld: ..., polarity: dark|clear, bias_nm: ...} (cf. parse_layer_spec)
+    bias_nm : biais global (défaut des couches qui n'en déclarent pas).
+
+    Retour : {nom_logique: bool (nx, ny)}. Le merge multi-datatypes/multi-
+    couches est l'union des masques ; la polarité s'applique APRÈS le merge
+    ("clear" -> complémentaire du motif dessiné).
+    """
+    specs = {name: parse_layer_spec(name, spec, bias_nm)
+             for name, spec in layers.items()}
+    wanted = sorted({ld for s in specs.values() for ld in s["ld"]})
+    bias_map: dict = {}
+    for name, s in specs.items():
+        for ld in s["ld"]:
+            if ld in bias_map and bias_map[ld] != s["bias_nm"]:
+                raise ValueError(
+                    f"conflit de bias sur la couche {ld} : {bias_map[ld]} nm "
+                    f"vs {s['bias_nm']} nm (couche {name!r}) — un seul bias "
+                    "par (layer, datatype)")
+            bias_map[ld] = s["bias_nm"]
+    masks = masks_from_layout(filename, grid, layers=tuple(wanted),
+                              bbox=bbox, cell_name=cell_name,
+                              bias_nm=bias_map, evenodd=evenodd)
+    out: dict = {}
+    for name, s in specs.items():
+        m = np.zeros((grid.nx, grid.ny), dtype=bool)
+        for ld in s["ld"]:
+            if ld in masks:
+                m |= masks[ld]
+        if s["polarity"] == "clear":
+            m = ~m
+        out[name] = m
+    return out

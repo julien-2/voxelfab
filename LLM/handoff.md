@@ -19,6 +19,14 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #10 implémentée** : specs de
+  couches v2 dans `layout:` — polarité clear/dark, merge multi-datatypes
+  (`gate: [10, [0,4]]`), biais local par couche (override du global).
+  `layout.py` : `parse_layer_spec` + `layer_masks_from_layout` ;
+  `masks_from_layout` accepte un dict de biais par (layer, datatype) ;
+  `run.py` les consomme. Format v1 rétrocompatible, golden `e1316a29…`
+  inchangé. Fix compat gdstk 1.x (`lib.top_level()`). Tests :
+  `tests/test_layout.py` (10 tests, mini GDS via gdstk) — 66 passed total.
 - **2026-11-20** (ce PC, `main`) — issues d'amélioration ouvertes :
   [#10](https://github.com/julien-2/voxelfab/issues/10) masques (polarité
   clear/dark, merge multi-datatypes `gate: [10, [0,4]]`, bias individuel par
