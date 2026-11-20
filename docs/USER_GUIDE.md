@@ -138,10 +138,12 @@ grid: {pitch_nm: 2.0, nx: 120, ny: 60, nz: 64, nz_max: 512}
   opération (dépôt, croissance…) dépasse le haut de la grille et que
   `nz_max` est défini, la grille s'agrandit toute seule en z (jusqu'à
   `nz_max`, avec un message `[grid] nz auto-grow : …`). Sans `nz_max`, le
-  dépôt est **tronqué** au sommet avec un `WARNING`. En backend `gpu`,
-  l'auto-grow n'est pas supporté (champs Taichi à shape fixe) : warning au
-  démarrage et troncature. À réserver donc au CPU — prévoyez `nz` assez
-  grand sur GPU.
+  dépôt est **tronqué** au sommet avec un `WARNING`. En backend `gpu` avec
+  `nz_max` : le mode device-résident est désactivé (mode par-op) pour
+  permettre l'auto-grow côté hôte entre les étapes — le contexte Taichi est
+  recréé automatiquement si `nz` change (et bascule en mode tuilé si la
+  nouvelle grille dépasse la VRAM) ; coût : un H2D/D2H par étape. Sans
+  `nz_max` en `gpu` : troncature + `WARNING` (prévoyez `nz` assez grand).
 
 Avec un **layout** GDS/OAS (§8), `nx`/`ny` sont ignorés : ils sont déduits
 de la bounding box du layout et du pitch. C'est donc **le pitch qui décide

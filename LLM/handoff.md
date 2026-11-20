@@ -19,6 +19,12 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #11 maintenant complète (GPU
+  inclus)** : avec `grid.nz_max`, le backend gpu passe en mode par-op (plus
+  device-résident) et grow côté hôte entre les étapes
+  (`_estimate_z_needed` + `ensure_nz`) ; ctx Taichi recréé à la nouvelle
+  shape, tuilé auto si hors VRAM. Test équivalence gpu/cpu (octets
+  identiques). 87 tests passés.
 - **2026-11-20** (ce PC, `main`) — **issue #9 faite** : `history.h5`,
   historique de toutes les étapes dans UN fichier HDF5 (`history:` dans le
   deck, modes summary/delta/full). Delta = runs RLE axe x des voxels modifiés

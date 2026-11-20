@@ -63,6 +63,30 @@ class DeckRunner:
                 return float(step[k])
         raise DeckError(f"épaisseur manquante ({'/'.join(keys)}) : {step}")
 
+    def _estimate_z_needed(self, step: dict) -> int:
+        """Estimation hôte du z max atteint par `step` — pour l'auto-grow nz
+        en backend gpu (mode par-op), avant que le noyau ne tronque."""
+        g = self.g
+        op = step.get("op")
+        try:
+            if op == "substrate":
+                return g.voxels(self._thickness(step, "thickness_nm"))
+            if op == "deposit":
+                t = g.voxels(self._thickness(step, "thickness_nm"))
+                h = g.height_map()
+                base = int(h.max()) + 1 if h.size and h.max() >= 0 else 0
+                return base + t
+            if op == "grow":
+                t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
+                exp = float(step.get("expansion", 1.0))
+                return g.nz + max(0, int(round(t * (exp - 1.0))))
+            if op == "epitaxy":      # crystal monte d'environ t au-dessus
+                t = g.voxels(self._thickness(step, "depth_nm", "thickness_nm"))
+                return g.nz + t
+        except (KeyError, DeckError):
+            pass
+        return g.nz
+
     def _mask(self, spec, where=""):
         """Construit un masque (nx, ny) : layer | rect | bands | invert."""
         g = self.g
@@ -188,11 +212,15 @@ class DeckRunner:
         # pendant toutes les étapes — un seul H2D en entrée, un seul D2H en
         # sortie (juste avant les exports), soit ~2×N octets de PCIe en moins
         # par étape. Voir ops/gpu.py (bind_resident/release_resident).
-        resident = self.backend == "gpu"
-        if resident and self.g.nz_max is not None:
-            print("[grid] WARNING : nz_max (auto-grow) non supporté en backend "
-                  "gpu — champs Taichi à shape fixe ; les dépôts au-delà de "
-                  f"nz={self.g.nz} seront tronqués")
+        # nz_max + backend gpu : on force le mode par-op (pas device-résident)
+        # pour pouvoir grandir la grille côté hôte entre les étapes ; le ctx
+        # Taichi est recréé automatiquement à la nouvelle shape (_CTX_CACHE
+        # keyed by shape), et si elle dépasse la VRAM -> mode tuilé auto.
+        resident = self.backend == "gpu" and self.g.nz_max is None
+        if self.backend == "gpu" and self.g.nz_max is not None:
+            print("[grid] backend gpu + nz_max : mode par-op (pas device-"
+                  "résident), auto-grow de nz actif ; ctx Taichi recréé si "
+                  "nz change")
         # historique du procédé dans UN seul fichier (issue #9) : état initial
         # (avant bind_resident, grid.data est encore côté hôte)
         hw = None
@@ -227,6 +255,12 @@ class DeckRunner:
                         raise DeckError(
                             f"étape {i} : clé YAML booléenne (on/yes/off/no…) — "
                             f"écrire 'on_materials:' ou coter la clé ('on': …)")
+                # auto-grow nz côté hôte AVANT l'étape (backend gpu avec
+                # nz_max, mode par-op : grid.data est hôte entre les étapes)
+                if self.backend == "gpu" and self.g.nz_max is not None:
+                    z = self._estimate_z_needed(step)
+                    if z > self.g.nz:
+                        self.g.ensure_nz(z)
                 t0 = time.perf_counter()
                 try:
                     self._exec(step)

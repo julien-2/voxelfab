@@ -7,6 +7,7 @@ auto-grow de nz (`grid.nz_max`).
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,3 +115,28 @@ def test_nz_max_depasse_tronque(tmp_path, capsys):
     assert r.g.nz == 20                       # grow jusqu'à nz_max puis clip
     assert "tronqué" in capsys.readouterr().out
     assert r.g.height_map().max() == 19
+
+
+def test_nz_max_gpu_matches_cpu(tmp_path):
+    """Auto-grow nz en backend gpu (nz_max -> mode par-op forcé, ctx Taichi
+    recréé à la nouvelle shape) : même nz final et mêmes octets que le CPU."""
+    from voxelfab.ops import available_backends
+    if "gpu" not in available_backends():
+        pytest.skip("taichi absent")
+
+    def run(backend, out):
+        deck = _deck()
+        deck["grid"]["nz_max"] = 100
+        deck["steps"] = [
+            {"op": "substrate", "material": "Si", "thickness_nm": 20},
+            {"op": "deposit", "material": "Si", "thickness_nm": 500,
+             "mode": "directional"},
+        ]
+        r = DeckRunner(deck, outdir=out, backend=backend)
+        r.run()
+        return r
+
+    rc = run("cpu", tmp_path / "cpu")
+    rg = run("gpu", tmp_path / "gpu")
+    assert rc.g.nz == rg.g.nz == 52           # 2 + 50, auto-grow des deux côtés
+    assert np.array_equal(rg.g.data, rc.g.data)   # contrat voxel-exact

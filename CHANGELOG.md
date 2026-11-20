@@ -6,6 +6,14 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **Auto-grow de `nz` aussi en backend gpu** (issue #11, suite) : avec
+  `grid.nz_max`, le mode device-résident est désactivé (mode par-op) pour
+  grandir la grille côté hôte entre les étapes (`DeckRunner._estimate_z_needed`
+  + `ensure_nz` avant substrate/deposit/grow/epitaxy) ; le ctx Taichi est
+  recréé automatiquement à la nouvelle shape (`_CTX_CACHE` keyed by shape),
+  bascule en tuilé si hors VRAM. Test d'équivalence gpu/cpu avec nz_max
+  (octets identiques, même nz final). 87 passed.
+
 - **Historique du procédé dans UN seul fichier HDF5** (issue #9) : nouveau
   bloc `history: {file: history.h5, mode: delta|summary|full, every: N}`.
   Mode `delta` (défaut) = runs RLE axe x des voxels modifiés par étape
