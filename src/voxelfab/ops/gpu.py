@@ -101,6 +101,38 @@ def _ensure_init():
     _INIT = True
 
 
+_CUDA_DEVICES = None
+
+
+def _cuda_device_count() -> int:
+    """Nombre de devices CUDA détectés via cuInit + cuDeviceGetCount
+    (nvcuda.dll / libcuda.so) — sonde ctypes SANS effet de bord sur le
+    runtime Taichi (contrairement à ti.init(arch=ti.cuda))."""
+    import ctypes
+    for lib in ("nvcuda.dll", "libcuda.so.1", "libcuda.so"):
+        try:
+            cuda = ctypes.CDLL(lib)
+            if cuda.cuInit(0) != 0:
+                continue
+            n = ctypes.c_int(0)
+            if cuda.cuDeviceGetCount(ctypes.byref(n)) == 0:
+                return n.value
+        except Exception:
+            continue
+    return 0
+
+
+def gpu_available() -> bool:
+    """True si taichi est installé ET qu'un device CUDA est détecté.
+    C'est le critère de ``ops.resolve_backend('auto')``."""
+    global _CUDA_DEVICES
+    if not HAS_TAICHI:
+        return False
+    if _CUDA_DEVICES is None:
+        _CUDA_DEVICES = _cuda_device_count()
+    return _CUDA_DEVICES > 0
+
+
 if HAS_TAICHI:
 
     INF = float("inf")

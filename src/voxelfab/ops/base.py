@@ -189,11 +189,16 @@ def available_backends() -> list:
 
 def resolve_backend(name: str) -> str:
     """Résout un nom de backend : ``'auto'`` -> ``'gpu'`` si le backend GPU
-    (taichi) est disponible, sinon ``'cpu'``. Tout autre nom doit être dans
-    available_backends()."""
+    est disponible **et** qu'un device CUDA est détecté (sinon ``'cpu'``,
+    même si taichi est installé — il tournerait en fallback CPU lent).
+    Tout autre nom doit être dans available_backends()."""
     backends = available_backends()
     if name == "auto":
-        return "gpu" if "gpu" in backends else "cpu"
+        if "gpu" in backends:
+            from . import gpu as _gpu_mod      # import lazy (gpu importe base)
+            if _gpu_mod.gpu_available():
+                return "gpu"
+        return "cpu"
     if name not in backends:
         raise KeyError(f"backend inconnu {name!r} "
                        f"(disponibles : {', '.join(backends)})")

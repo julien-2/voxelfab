@@ -184,8 +184,11 @@ backend must reproduce them voxel-for-voxel.
 - **Determinism rules:** only order-independent reductions (min/max); no
   float atomics; integer-only comparisons. GPU and CPU results must hash
   identically — this is the release gate.
-- **Backend selection:** `vf run --backend auto` → GPU if `taichi` present,
-  else CPU. Both backends always shipped; GPU is an optional extra.
+- **Backend selection:** `vf run --backend auto` → GPU if `taichi` is
+  installed **and** a CUDA device is detected (`cuInit`/`cuDeviceGetCount`,
+  see `ops/gpu.py::gpu_available`), else CPU — with taichi but no CUDA card,
+  `auto` must not pick `gpu` (Taichi would silently fall back to a slow CPU
+  runtime). Both backends always shipped; GPU is an optional extra.
 
 ### Sketch (conformal deposit, GPU)
 

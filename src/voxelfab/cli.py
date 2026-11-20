@@ -69,7 +69,7 @@ def main():
     p_run.add_argument("--backend", default="cpu",
                        choices=available_backends() + ["auto"],
                        help="backend d'exécution : cpu, gpu, ou auto "
-                            "(gpu si taichi présent, sinon cpu ; "
+                            "(gpu si un device CUDA est détecté, sinon cpu ; "
                             "défaut : cpu)")
     p_run.set_defaults(fn=cmd_run)
 
@@ -81,8 +81,8 @@ def main():
     p_demo.add_argument("-o", "--outdir")
     p_demo.add_argument("--backend", default="cpu",
                         choices=available_backends() + ["auto"],
-                        help="cpu, gpu, ou auto (gpu si taichi présent, "
-                             "sinon cpu ; défaut : cpu)")
+                        help="cpu, gpu, ou auto (gpu si un device CUDA est "
+                             "détecté, sinon cpu ; défaut : cpu)")
     p_demo.set_defaults(fn=cmd_demo)
 
     p_bench = sub.add_parser("bench",

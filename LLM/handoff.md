@@ -19,6 +19,12 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — raffinement de `--backend auto` :
+  `auto` -> `gpu` seulement si un **device CUDA est détecté**
+  (`gpu_available()` = sonde `cuInit`/`cuDeviceGetCount` via ctypes, sans
+  effet de bord sur le runtime Taichi), pas seulement si taichi est installé.
+  Sur ce PC : taichi 1.7.4 présent mais aucune libcuda -> `auto` = `cpu`
+  (avant ce fix : `gpu` en fallback `arch=x64`, lent).
 - **2026-11-20** (ce PC, `main`) — `--backend auto` implémenté
   (`ops.resolve_backend`, résolu dans `DeckRunner` ; `vf run|demo --backend
   auto` ; test `tests/test_backend_auto.py`). `auto` -> `gpu` si taichi
@@ -216,10 +222,11 @@ runtime CUDA). Sans GPU, `ti.init` fallback sur `ti.cpu` dans `ops/gpu.py`
    - Test : `test_tiled_mode_matches_cpu` (octets = CPU en tuilé forcé).
 4. Bench nightly (10⁷/10⁸ vx) comme prévu au quality gate §8 d'ARCHITECTURE.md.
 5. ~~`vf run --backend auto`~~ **implémenté le 2026-11-20** :
-   `ops.resolve_backend('auto')` -> `gpu` si taichi présent, sinon `cpu`,
-   résolu dans `DeckRunner` (report.json/HDF5 gardent le backend effectif) ;
-   `vf run|demo --backend auto` ; test `tests/test_backend_auto.py` (deck démo
-   en auto, hash golden `e1316a29…` inchangé).
+   `ops.resolve_backend('auto')` -> `gpu` si taichi présent **et** device CUDA
+   détecté (`ops/gpu.py::gpu_available`, sonde `cuInit`/`cuDeviceGetCount`),
+   sinon `cpu` ; résolu dans `DeckRunner` (report.json/HDF5 gardent le backend
+   effectif) ; `vf run|demo --backend auto` ; test `tests/test_backend_auto.py`
+   (deck démo en auto, hash golden `e1316a29…` inchangé).
 
 ## 8. Fichiers clés à lire en priorité
 

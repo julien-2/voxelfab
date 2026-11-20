@@ -8,7 +8,10 @@ garantit la reproductibilité de chaque version.
 
 - **`--backend auto` implémenté** (`vf run` / `vf demo`, cf. ARCHITECTURE.md
   §5 « Backend selection ») : `ops.resolve_backend('auto')` -> `gpu` si
-  taichi est installé, sinon `cpu` ; la résolution est faite dans
+  taichi est installé **et** qu'un device CUDA est détecté
+  (`ops/gpu.py::gpu_available`, sonde `cuInit`/`cuDeviceGetCount` sans effet
+  de bord), sinon `cpu` — taichi présent sans carte CUDA ne suffit pas
+  (Taichi tomberait en fallback CPU lent). La résolution est faite dans
   `DeckRunner`, donc `report.json` et le HDF5 gardent le **backend effectif**
   (reproductibilité). Hash du deck de démo inchangé (`e1316a29…`, contrat
   voxel-exact CPU/GPU). Test : `tests/test_backend_auto.py`.
