@@ -19,6 +19,12 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #12 faite** : checkpoints entre
+  étapes (`checkpoint:` dans le step ou `checkpoints: {every, dir, formats}`
+  global ; formats png/h5/vtk/stl ; nommage auto `ckpt/step_XXXX_op.ext`).
+  h5 de checkpoint = état exact (test vs run tronqué). GPU résident : D2H
+  temporaire via `sync_to_host` (nouveau dans ops/gpu.py). Golden inchangé,
+  78 tests passés (`tests/test_checkpoints.py`).
 - **2026-11-20** (ce PC, `main`) — **issue #11 faite (partie CPU)** :
   substrat multicouche déclaratif `substrate:` (bottom-first, ex. SOI) exécuté
   avant les steps ; `grid.nz_max` = auto-grow de nz (`VoxelGrid.ensure_nz`)

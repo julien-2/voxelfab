@@ -1235,6 +1235,17 @@ if HAS_TAICHI:
             grid.data = ctx.d.to_numpy()
             grid._gpu_resident = False
 
+    def sync_to_host(grid):
+        """D2H temporaire SANS quitter le mode device-résident (checkpoints
+        entre étapes) : grid.data est rapatrié depuis le device, mais
+        _gpu_resident reste True — les étapes suivantes continuent sur le
+        device. En mode tuilé / non-résident : no-op (grid.data déjà hôte)."""
+
+        if getattr(grid, "_gpu_resident", False):
+            ctx = _ctx((grid.nx, grid.ny, grid.nz))
+            ti.sync()
+            grid.data = ctx.d.to_numpy()
+
     # ----------------------------------------------------------------------
     # Étapes enregistrées (unités : VOXELS, mêmes signatures que cpu.py)
     # ----------------------------------------------------------------------

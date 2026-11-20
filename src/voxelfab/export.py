@@ -24,7 +24,7 @@ from .grid import Materials, VoxelGrid
 #: pas de timings ni dechemin local -> deux runs identiques donnent un
 #: fichier identique)
 _H5_PROV_KEYS = ("deck", "deck_sha256", "grid", "pitch_nm",
-                 "voxelfab_version", "backend")
+                 "voxelfab_version", "backend", "checkpoint_step")
 
 
 def export_h5(grid: VoxelGrid, filename: str = "structure.h5",

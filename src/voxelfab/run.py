@@ -214,6 +214,7 @@ class DeckRunner:
                     raise DeckError(f"étape {i} : paramètre manquant {e}") from None
                 self.timings.append((i, step.get("op", "?"),
                                      time.perf_counter() - t0))
+                self._maybe_checkpoint(i, step)
         finally:
             if resident:
                 release_resident(self.g)
@@ -346,6 +347,79 @@ class DeckRunner:
             raise DeckError(f"op inconnue : {op!r}")
 
     # --- sorties -----------------------------------------------------------
+
+    # --- checkpoints entre étapes (issue #12) --------------------------------
+
+    CKPT_FORMATS = ("png", "h5", "vtk", "stl")
+
+    def _maybe_checkpoint(self, i: int, step: dict):
+        """Sauvegarde l'état de la grille après l'étape i si demandé :
+        - au niveau étape : `checkpoint: true` (formats par défaut), ou
+          `checkpoint: [png, h5]`, ou `checkpoint: {png: a.png, h5: b.h5}` ;
+        - globalement : `checkpoints: {every: 5, dir: ckpt, formats: [...]}`
+          (toutes les `every` étapes).
+        Nommage auto : {outdir}/{dir}/step_{i:04d}_{op}.{ext}.
+        """
+        gck = self.deck.get("checkpoints") or {}
+        if not isinstance(gck, dict):
+            raise DeckError(f"'checkpoints:' doit être un dict, pas {gck!r}")
+        every = int(gck.get("every", 0) or 0)
+        gdir = str(gck.get("dir", "ckpt"))
+        gformats = list(gck.get("formats", ["png", "h5"]))
+        specs: list = []
+        sck = step.get("checkpoint")
+        if sck:
+            if sck is True:
+                specs += [(f, None) for f in gformats]
+            elif isinstance(sck, (list, tuple)):
+                specs += [(f, None) for f in sck]
+            elif isinstance(sck, dict):
+                specs += list(sck.items())
+            else:
+                raise DeckError(f"étape {i} : 'checkpoint' invalide {sck!r} "
+                                "(true | [formats] | {format: fichier})")
+        if every and i % every == 0:
+            specs += [(f, None) for f in gformats]
+        if not specs:
+            return
+        for f, _ in specs:
+            if str(f).lower() not in self.CKPT_FORMATS:
+                raise DeckError(f"étape {i} : format de checkpoint inconnu "
+                                f"{f!r} (png | h5 | vtk | stl)")
+        # mode device-résident GPU : D2H temporaire (le résident continue)
+        if getattr(self.g, "_gpu_resident", False):
+            from .ops.gpu import sync_to_host
+            sync_to_host(self.g)
+        base = Path(self.outdir)
+        auto_dir = base / gdir
+        auto_dir.mkdir(parents=True, exist_ok=True)
+        op = str(step.get("op", "step"))
+        for fmt, name in specs:
+            fmt = str(fmt).lower()
+            path = (base / str(name)) if name else \
+                auto_dir / f"step_{i:04d}_{op}.{fmt}"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._export_checkpoint(fmt, path, i, step)
+            self._log(f"checkpoint étape {i} ({op}) -> {path.name} [{fmt}]")
+            print(f"[checkpoint] étape {i} ({op}) -> {path} [{fmt}]")
+
+    def _export_checkpoint(self, fmt: str, path: Path, i: int, step: dict):
+        from .export import export_h5, export_stl, export_vtk, render_views
+        g = self.g
+        if fmt == "png":
+            render_views(g, filename=str(path),
+                         title=f"étape {i} — {step.get('op', '?')}")
+        elif fmt == "h5":
+            prov = self.provenance()
+            export_h5(g, filename=str(path),
+                      provenance={**{k: v for k, v in prov.items()
+                                     if k != "steps"},
+                                  "checkpoint_step": i})
+        elif fmt == "vtk":
+            export_vtk(g, filename=str(path))
+        elif fmt == "stl":
+            export_stl(g, prefix=str(path)[:-4] if str(path).endswith(".stl")
+                       else str(path))
 
     def provenance(self) -> dict:
         """Bloc de provenance : tout ce qu'il faut pour rejouer un run."""

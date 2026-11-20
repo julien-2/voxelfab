@@ -6,6 +6,16 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **Checkpoints entre étapes** (issue #12, sous-issue de #9) : sauvegarde de
+  l'état de la grille après une étape clef — `checkpoint: true | [formats] |
+  {format: fichier}` dans le step, ou global `checkpoints: {every: N, dir,
+  formats}`. Formats `png` / `h5` (rechargeable, attr `prov_checkpoint_step`) /
+  `vtk` (pyvista) / `stl` ; nommage auto `ckpt/step_XXXX_<op>.<ext>`.
+  En backend gpu device-résident : D2H temporaire via `sync_to_host` sans
+  quitter le mode résident. Aucun checkpoint par défaut -> golden
+  `e1316a29…` et perfs inchangés. Tests : `tests/test_checkpoints.py`
+  (6 tests, dont égalité octet/octet checkpoint vs run tronqué). 78 passed.
+
 - **Substrat multicouche déclaratif + `nz` auto-extensible** (issue #11, CPU) :
   - nouveau bloc `substrate:` exécuté avant `steps`, ordre bottom-first
     (ex. SOI : handle Si / BOX SiO2 / top Si) ; erreur claire si l'épaisseur
