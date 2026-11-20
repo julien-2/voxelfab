@@ -6,6 +6,17 @@ garantit la reproductibilité de chaque version.
 
 ## Unreleased — 2026-11-20
 
+- **perf(gpu): `fill` en union-find GPU** (issue #3, O(N) au lieu de O(P·N)) :
+  labélisation des composantes d'air 6-connexes par `atomic_min` +
+  compression de chemins (`k_uf_pass`/`k_uf_compress`, nouveaux champs
+  `lbl` i32 3D + `topflag` u8 1D), racines des composantes touchant le plan
+  top marquées après convergence, `fill_uf_set`. **Bit-identique** vs
+  `ndimage.label` CPU (label final = min d'index par composante, indépendant
+  de l'ordre) : 87 tests OK, golden `e1316a29…` inchangé. Mesuré (taichi
+  x64, warm-up) : fill 256³ **14,6 s -> 1,2 s (×12)**, 128³ 1,17 s -> 0,18 s
+  (×6,6) ; le vieux BFS ping-pong supprimé. `epitaxy seed` reste en BFS borné
+  (profondeur `depth`, 1 noyau/passe depuis le commit précédent, ×1,3-1,4).
+
 - **perf(gpu): BFS ping-pong de `fill` / `epitaxy seed` allégé** (issue #3) :
   une passe BFS = UN seul noyau ping-pong (`seed_pass_ab/ba`,
   `fill_pass_ab/ba` : `dst = src | (dil6(src) & air & ~src)`) au lieu de 2

@@ -19,6 +19,11 @@ obligatoire entre deux sessions, quelle que soit la machine.
 
 ### Journal des mises à jour
 
+- **2026-11-20** (ce PC, `main`) — **issue #3 (piste 2, union-find)**:
+  `fill` GPU remplacé par un union-find (atomic_min + path compression,
+  champs lbl i32 3D + topflag u8 1D) — bit-identique vs ndimage.label CPU.
+  Mesuré (x64, warm-up) : fill 256³ 14,6 s -> 1,2 s (×12), 128³ ×6,6.
+  Vieux noyaux BFS fill supprimés. seed reste en BFS 1 noyau/passe.
 - **2026-11-20** (ce PC, `main`) — **issue #3 (piste 1)**: BFS `fill` /
   `epitaxy seed` en UN noyau par passe ping-pong + flag fill lu tous les 8
   passes (plus de D2H/passe). Bit-identique (87 tests OK, golden inchangé).

@@ -180,6 +180,8 @@ if HAS_TAICHI:
             w3 = ti.field(ti.u8, shape=shape)
             w4 = ti.field(ti.u8, shape=shape)
             w5 = ti.field(ti.u8, shape=shape)
+            lbl = ti.field(ti.i32, shape=shape)       # union-find (fill): label 3D
+            topflag = ti.field(ti.u8, shape=(nx * ny * nz,))  # labels touchant le top
             h = ti.field(ti.i32, shape=(nx, ny))      # 2D i32 (hauteurs...)
             h2 = ti.field(ti.i32, shape=(nx, ny))     # 2D i32 (budgets...)
             s2 = ti.field(ti.u8, shape=(nx, ny))      # surface exposée
@@ -934,105 +936,82 @@ if HAS_TAICHI:
                                 d[i, j, k] = Materials.AIR
 
             # --- fill (tranchées) : inondation depuis la face z = nz-1 ------
+            # --- fill par union-find (issue #3) : O(N), passes ~log --------
             @ti.kernel
-            def k_fill_init():
-                for i, j, k in w2:
-                    w2[i, j, k] = ti.cast(
-                        d[i, j, k] == 0 and k == nz - 1, ti.u8)
+            def k_uf_init():
+                for i, j, k in lbl:
+                    if d[i, j, k] == 0:
+                        lbl[i, j, k] = i + nx * (j + ny * k)
+                    else:
+                        lbl[i, j, k] = -1
+
+            @ti.kernel
+            def k_uf_topflag_clear():
+                for v in topflag:
+                    topflag[v] = 0
+
+            @ti.kernel
+            def k_uf_mark_top():
+                for i, j in h:
+                    l = lbl[i, j, nz - 1]
+                    if l >= 0:
+                        topflag[l] = 1
+
+            @ti.kernel
+            def k_uf_pass():
+                """Union par atomic_min : propage le min de label aux 6
+                voisins ; flag si un label a baissé (convergence)."""
+                for i, j, k in lbl:
+                    l = lbl[i, j, k]
+                    if l >= 0:
+                        m = l
+                        if i > 0 and lbl[i - 1, j, k] >= 0 and lbl[i - 1, j, k] < m:
+                            m = lbl[i - 1, j, k]
+                        if i < nx - 1 and lbl[i + 1, j, k] >= 0 and lbl[i + 1, j, k] < m:
+                            m = lbl[i + 1, j, k]
+                        if j > 0 and lbl[i, j - 1, k] >= 0 and lbl[i, j - 1, k] < m:
+                            m = lbl[i, j - 1, k]
+                        if j < ny - 1 and lbl[i, j + 1, k] >= 0 and lbl[i, j + 1, k] < m:
+                            m = lbl[i, j + 1, k]
+                        if k > 0 and lbl[i, j, k - 1] >= 0 and lbl[i, j, k - 1] < m:
+                            m = lbl[i, j, k - 1]
+                        if k < nz - 1 and lbl[i, j, k + 1] >= 0 and lbl[i, j, k + 1] < m:
+                            m = lbl[i, j, k + 1]
+                        if m < l:
+                            ti.atomic_or(flag[None], 1)
+                            ti.atomic_min(lbl[i, j, k], m)
+                        if i < nx - 1 and lbl[i + 1, j, k] >= 0:
+                            ti.atomic_min(lbl[i + 1, j, k], m)
+                        if j < ny - 1 and lbl[i, j + 1, k] >= 0:
+                            ti.atomic_min(lbl[i, j + 1, k], m)
+                        if k < nz - 1 and lbl[i, j, k + 1] >= 0:
+                            ti.atomic_min(lbl[i, j, k + 1], m)
+
+            @ti.kernel
+            def k_uf_compress():
+                """Path compression : lbl[v] = lbl[lbl[v]] (accélère la
+                convergence ; ne change pas le min final de la composante,
+                donc bit-identique)."""
+                for i, j, k in lbl:
+                    l = lbl[i, j, k]
+                    if l >= 0:
+                        li = l % nx
+                        lj = (l // nx) % ny
+                        lk = l // (nx * ny)
+                        r = lbl[li, lj, lk]
+                        if r >= 0 and r < l:
+                            lbl[i, j, k] = r
+
+            @ti.kernel
+            def k_fill_uf_set(mat: ti.u8, max_z: ti.i32):
+                for i, j, k in d:
+                    l = lbl[i, j, k]
+                    if l >= 0 and k <= max_z and topflag[l] != 0:
+                        d[i, j, k] = mat
 
             @ti.kernel
             def k_clear_flag():
                 flag[None] = 0
-
-            @ti.kernel
-            def k_fill_prop():
-                for i, j, k in w3:
-                    hit = 0
-                    if i > 0 and w2[i - 1, j, k] != 0:
-                        hit = 1
-                    if i < nx - 1 and w2[i + 1, j, k] != 0:
-                        hit = 1
-                    if j > 0 and w2[i, j - 1, k] != 0:
-                        hit = 1
-                    if j < ny - 1 and w2[i, j + 1, k] != 0:
-                        hit = 1
-                    if k > 0 and w2[i, j, k - 1] != 0:
-                        hit = 1
-                    if k < nz - 1 and w2[i, j, k + 1] != 0:
-                        hit = 1
-                    nw = 0
-                    if hit != 0 and d[i, j, k] == 0 and w2[i, j, k] == 0:
-                        nw = 1
-                        ti.atomic_or(flag[None], 1)
-                    w3[i, j, k] = ti.cast(nw, ti.u8)
-
-            @ti.kernel
-            def k_or_w2_w3():
-                for i, j, k in w2:
-                    if w3[i, j, k] != 0:
-                        w2[i, j, k] = 1
-
-            @ti.kernel
-            def k_fill_pass_ab():
-                """Une passe fill en UN noyau : w3 = w2 | (dil6(w2) & air &
-                ~w2), flag si changement — fusion de fill_prop + or_w2_w3.
-                Le flag n'est plus lu (sync D2H) à chaque passe : check
-                tous les 8 passes côté hôte."""
-                for i, j, k in w3:
-                    old = w2[i, j, k]
-                    hit = 0
-                    if i > 0 and w2[i - 1, j, k] != 0:
-                        hit = 1
-                    if i < nx - 1 and w2[i + 1, j, k] != 0:
-                        hit = 1
-                    if j > 0 and w2[i, j - 1, k] != 0:
-                        hit = 1
-                    if j < ny - 1 and w2[i, j + 1, k] != 0:
-                        hit = 1
-                    if k > 0 and w2[i, j, k - 1] != 0:
-                        hit = 1
-                    if k < nz - 1 and w2[i, j, k + 1] != 0:
-                        hit = 1
-                    nw = old
-                    if hit != 0 and d[i, j, k] == 0 and old == 0:
-                        nw = 1
-                        ti.atomic_or(flag[None], 1)
-                    w3[i, j, k] = ti.cast(nw, ti.u8)
-
-            @ti.kernel
-            def k_fill_pass_ba():
-                """Passe retour : w2 = w3 | (dil6(w3) & air & ~w3)."""
-                for i, j, k in w2:
-                    old = w3[i, j, k]
-                    hit = 0
-                    if i > 0 and w3[i - 1, j, k] != 0:
-                        hit = 1
-                    if i < nx - 1 and w3[i + 1, j, k] != 0:
-                        hit = 1
-                    if j > 0 and w3[i, j - 1, k] != 0:
-                        hit = 1
-                    if j < ny - 1 and w3[i, j + 1, k] != 0:
-                        hit = 1
-                    if k > 0 and w3[i, j, k - 1] != 0:
-                        hit = 1
-                    if k < nz - 1 and w3[i, j, k + 1] != 0:
-                        hit = 1
-                    nw = old
-                    if hit != 0 and d[i, j, k] == 0 and old == 0:
-                        nw = 1
-                        ti.atomic_or(flag[None], 1)
-                    w2[i, j, k] = ti.cast(nw, ti.u8)
-
-            @ti.kernel
-            def k_copy_w3_w2():
-                for i, j, k in w2:
-                    w2[i, j, k] = w3[i, j, k]
-
-            @ti.kernel
-            def k_fill_set(mat: ti.u8, max_z: ti.i32):
-                for i, j, k in d:
-                    if w2[i, j, k] != 0 and k <= max_z:
-                        d[i, j, k] = mat
 
             # --- CMP ----------------------------------------------------------
             @ti.kernel
@@ -1111,14 +1090,13 @@ if HAS_TAICHI:
                 "nmap": k_nmap,
                 "epi_fill": k_epi_fill,
                 "etch_crystal_fill": k_etch_crystal_fill,
-                "fill_init": k_fill_init,
                 "clear_flag": k_clear_flag,
-                "fill_prop": k_fill_prop,
-                "or_w2_w3": k_or_w2_w3,
-                "fill_pass_ab": k_fill_pass_ab,
-                "fill_pass_ba": k_fill_pass_ba,
-                "copy_w3_w2": k_copy_w3_w2,
-                "fill_set": k_fill_set,
+                "uf_init": k_uf_init,
+                "uf_topflag_clear": k_uf_topflag_clear,
+                "uf_mark_top": k_uf_mark_top,
+                "uf_pass": k_uf_pass,
+                "uf_compress": k_uf_compress,
+                "fill_uf_set": k_fill_uf_set,
                 "cmp": k_cmp,
             }
 
@@ -1159,9 +1137,10 @@ if HAS_TAICHI:
         return _BUDGET
 
     def _ctx_bytes(shape) -> int:
-        """Octets VRAM d'un _GpuCtx : 6 tampons u8 3D + champs 2D (~51 o/col)."""
+        """Octets VRAM d'un _GpuCtx : 6 tampons u8 3D + lbl i32 3D +
+        topflag u8 1D (union-find) + champs 2D (~51 o/col)."""
         nx, ny, nz = shape
-        return 6 * nx * ny * nz + 51 * nx * ny
+        return 11 * nx * ny * nz + 51 * nx * ny
 
     def _fits(shape) -> bool:
         """True si un ctx complet de cette shape tient dans le budget VRAM.
@@ -1558,21 +1537,23 @@ if HAS_TAICHI:
     @register("gpu", "fill")
     @_gpu_op
     def fill_trench(ctx, grid, material, max_z):
-        ctx.k["fill_init"]()
-        # passes en UN noyau ping-pong (fusion fill_prop + or_w2_w3) ; le
-        # flag n'est lu (sync D2H) que tous les 8 passes, pas à chaque passe
-        max_passes = grid.nx + grid.ny + grid.nz
-        p_done = -1
+        # union-find sur l'air (issue #3) : label final = min d'index par
+        # composante 6-connexe -> bit-identique vs ndimage.label (CPU).
+        # Convergence en ~log(passes) grâce à la compression de chemins.
+        ctx.k["uf_init"]()
+        ctx.k["uf_topflag_clear"]()
+        max_passes = grid.nx + grid.ny + grid.nz      # borne sûre (diamètre)
         for p in range(max_passes):
-            p_done = p
-            ctx.k["fill_pass_ab" if p % 2 == 0 else "fill_pass_ba"]()
+            ctx.k["clear_flag"]()
+            ctx.k["uf_pass"]()
+            ctx.k["uf_compress"]()
             if (p + 1) % 8 == 0 or p == max_passes - 1:
                 if int(ctx.flag.to_numpy()) == 0:
                     break
-                ctx.k["clear_flag"]()
-        if p_done >= 0 and p_done % 2 == 0:
-            ctx.k["copy_w3_w2"]()                         # reach final -> w2
-        ctx.k["fill_set"](material, max_z)
+        # après convergence, lbl[v] = min de sa composante : on marque les
+        # racines des composantes qui touchent le plan top
+        ctx.k["uf_mark_top"]()
+        ctx.k["fill_uf_set"](material, max_z)
 
     @register("gpu", "cmp")
     @_tile("xy")
